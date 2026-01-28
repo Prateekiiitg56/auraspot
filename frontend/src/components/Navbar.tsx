@@ -11,6 +11,7 @@ const Navbar = ({ user }: { user: User | null }) => {
           <Link to="/">Home</Link>
           <Link to="/explore">Explore Properties</Link>
           <Link to="/notifications">🔔</Link>
+          {user && <Link to="/my-deals">💼</Link>}
           {user && <Link to="/profile">Profile</Link>}
           {!user && <Link to="/login">Login</Link>}
         </div>

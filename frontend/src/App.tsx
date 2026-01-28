@@ -9,6 +9,7 @@ import { auth } from "./services/firebase";
 import Navbar from "./components/Navbar";
 import Home from "./pages/home";
 import Profile from "./pages/Profile";
+import UserProfile from "./pages/UserProfile";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import AddProperty from "./pages/AddProperty";
@@ -17,6 +18,7 @@ import PropertyDetails from "./pages/PropertyDetails";
 import { API } from "./services/api";
 import Notifications from "./pages/Notifications";
 import MyDeals from "./pages/MyDeals";
+import Chat from "./pages/Chat";
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -59,9 +61,11 @@ useEffect(() => {
         <Route path="/explore" element={<Explore />} />
         <Route path="/add" element={<AddProperty />} />
         <Route path="/profile" element={<Profile user={user} />} />
+        <Route path="/user/:email" element={<UserProfile />} />
         <Route path="/property/:id" element={<PropertyDetails />} />
         <Route path="/notifications" element={<Notifications />} />
         <Route path="/my-deals" element={<MyDeals />} />
+        <Route path="/chat/:propertyId" element={<Chat />} />
 
 
 

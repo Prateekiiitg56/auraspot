@@ -4,10 +4,6 @@ const connectDB = require("./config/db");
 
 const app = express();
 const path = require("path");
-const userRoutes = require("./routes/userRoutes");
-
-
-
 
 connectDB();
 
@@ -19,7 +15,7 @@ app.use("/properties", require("./routes/propertyRoutes"));
 app.use(express.urlencoded({ extended: true }));
 app.use("/users", require("./routes/userRoutes"));
 app.use("/notifications", require("./routes/notificationRoutes"));
-app.use("/users", userRoutes);
+app.use("/chat", require("./routes/chatRoutes"));
 
 app.listen(5000, ()=>console.log("Server running on 5000"));
 

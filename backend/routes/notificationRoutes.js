@@ -42,7 +42,7 @@ router.get("/owner/:ownerId", async (req, res) => {
       to: req.params.ownerId
     })
       .populate("from", "name email")
-      .populate("property", "title price status")
+      .populate("property", "title price status owner assignedTo")
       .sort({ createdAt: -1 });
 
     // Filter out notifications where property is null or status is not REQUESTED
@@ -72,6 +72,30 @@ router.get("/sender/:userId", async (req, res) => {
     res.json(notes);
   } catch (err) {
     console.error("LOAD SENDER NOTES ERROR:", err);
+    res.status(500).json({ message: "Failed loading notifications" });
+  }
+});
+
+/* ================= USER NOTIFICATIONS (INCLUDING ACCEPTANCES) ================= */
+
+router.get("/user/:userEmail", async (req, res) => {
+  try {
+    const user = await User.findOne({ email: req.params.userEmail });
+    
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const notes = await Notification.find({
+      to: user._id
+    })
+      .populate("from", "name email")
+      .populate("property", "_id title price status owner assignedTo")
+      .sort({ createdAt: -1 });
+
+    res.json(notes);
+  } catch (err) {
+    console.error("LOAD USER NOTES ERROR:", err);
     res.status(500).json({ message: "Failed loading notifications" });
   }
 });

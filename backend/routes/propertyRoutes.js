@@ -199,7 +199,9 @@ router.post("/:id/request", async (req, res) => {
 
 router.post("/:id/approve", async (req, res) => {
   try {
-    const property = await Property.findById(req.params.id);
+    const property = await Property.findById(req.params.id)
+      .populate("owner")
+      .populate("assignedTo");
 
     if (!property || property.status !== "REQUESTED") {
       return res.status(400).json({ message: "Invalid state" });
@@ -209,10 +211,29 @@ router.post("/:id/approve", async (req, res) => {
     property.status = property.purpose === "SALE" ? "SOLD" : "BOOKED";
     await property.save();
 
-    // Delete ALL notifications for this property
+    // Create notification to user that their request was accepted
+    if (property.assignedTo && property.owner) {
+      try {
+        await Notification.create({
+          from: property.owner._id,
+          to: property.assignedTo._id,
+          property: property._id,
+          action: "ACCEPTED",
+          message: `Your request for ${property.title} has been accepted!`
+        });
+        console.log(`Acceptance notification sent to user ${property.assignedTo.email}`);
+      } catch (notifErr) {
+        console.log("Failed to create acceptance notification:", notifErr);
+      }
+    }
+
+    // Delete ALL request notifications for this property
     try {
-      const deleteResult = await Notification.deleteMany({ property: req.params.id });
-      console.log(`Deleted ${deleteResult.deletedCount} notifications for property ${req.params.id}`);
+      const deleteResult = await Notification.deleteMany({ 
+        property: req.params.id,
+        action: { $ne: "ACCEPTED" }
+      });
+      console.log(`Deleted ${deleteResult.deletedCount} request notifications for property ${req.params.id}`);
     } catch (notifErr) {
       console.log("Notification delete error:", notifErr);
     }

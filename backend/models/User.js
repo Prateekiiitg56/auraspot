@@ -15,6 +15,21 @@ const userSchema = new mongoose.Schema({
     required: true 
   },
 
+  phone: {
+    type: String,
+    default: ""
+  },
+
+  location: {
+    type: String,
+    default: ""
+  },
+
+  bio: {
+    type: String,
+    default: ""
+  },
+
   role: { 
     type: String, 
     enum: ["USER", "OWNER"], 
@@ -29,6 +44,23 @@ const userSchema = new mongoose.Schema({
   verified: { 
     type: Boolean, 
     default: false 
+  },
+
+  verificationDocuments: [{
+    type: {
+      type: String,
+      enum: ["AADHAR", "PAN", "DRIVING_LICENSE", "PASSPORT"]
+    },
+    documentNumber: String,
+    uploadedAt: Date
+  }],
+
+  socials: {
+    facebook: { type: String, default: "" },
+    twitter: { type: String, default: "" },
+    linkedin: { type: String, default: "" },
+    instagram: { type: String, default: "" },
+    youtube: { type: String, default: "" }
   }
 
 }, { timestamps: true });
