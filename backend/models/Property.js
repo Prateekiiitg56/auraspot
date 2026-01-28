@@ -1,52 +1,59 @@
 const mongoose = require("mongoose");
 
 const propertySchema = new mongoose.Schema(
-{
-  title: String,
+  {
+    title: String,
 
-  type: { 
-    type: String, 
-    enum: ["ROOM", "PG", "HOSTEL", "FLAT", "HOME"] 
+    type: {
+      type: String,
+      enum: ["ROOM", "PG", "HOSTEL", "FLAT", "HOME"],
+      required: true
+    },
+
+    purpose: {
+      type: String,
+      enum: ["RENT", "SALE"],
+      required: true
+    },
+
+    price: {
+      type: Number,
+      required: true
+    },
+
+    city: String,
+    area: String,
+
+    image: String,
+
+    latitude: Number,
+    longitude: Number,
+
+    amenities: [String],
+
+    description: String,
+
+    owner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true
+    },
+
+    // 🔄 PROPERTY FLOW (real marketplace logic)
+    status: {
+      type: String,
+      enum: ["AVAILABLE", "REQUESTED", "BOOKED", "SOLD"],
+      default: "AVAILABLE"
+    },
+
+    // 👤 User who rented/bought
+    assignedTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null
+    }
   },
-
-  purpose: { 
-    type: String, 
-    enum: ["RENT", "SALE"] 
-  },
-
-  price: Number,
-
-  city: String,
-  area: String,
-
-  image: String,
-
-  latitude: Number,
-  longitude: Number,
-
-  amenities: [String],
-
-  description: String,
-
-  owner: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: "User" 
-  },
-
-  // 🔄 PROPERTY FLOW STATE
-  status: {
-    type: String,
-    enum: ["AVAILABLE", "REQUESTED", "RENTED"],
-    default: "AVAILABLE"
-  },
-
-  rentedBy: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: "User", 
-    default: null 
-  }
-},
-{ timestamps: true }
+  { timestamps: true }
 );
 
 module.exports = mongoose.model("Property", propertySchema);

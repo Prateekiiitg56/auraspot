@@ -22,6 +22,7 @@ type Property = {
   latitude: number;
   longitude: number;
   image: string;
+  status: string;
   owner?: Owner;
 };
 
@@ -59,7 +60,11 @@ const PropertyDetails = () => {
     property.owner?.email &&
     currentUser.email === property.owner.email;
 
-  // ---------------- DELETE ----------------
+const isUnavailable = property.status !== "AVAILABLE";
+
+
+  /* ================= DELETE ================= */
+
   const deleteProperty = async () => {
     if (!window.confirm("Delete this property?")) return;
 
@@ -70,22 +75,16 @@ const PropertyDetails = () => {
     navigate("/explore");
   };
 
-  // ---------------- SEND REQUEST ----------------
+  /* ================= SEND REQUEST ================= */
+
   const sendRequest = async () => {
-    if (!currentUser) {
-      alert("Please login first");
-      return;
-    }
+    if (!currentUser) return alert("Please login first");
 
-    if (!property.owner?._id) {
-      alert("Owner info missing");
-      return;
-    }
+    if (!property.owner?._id) return alert("Owner info missing");
 
-    if (!message.trim()) {
-      alert("Please write a message");
-      return;
-    }
+    if (!message.trim()) return alert("Please write a message");
+
+    if (isUnavailable) return alert("Property already booked");
 
     await fetch(`${API}/notifications`, {
       method: "POST",
@@ -103,6 +102,8 @@ const PropertyDetails = () => {
     setMessage("");
   };
 
+  /* ================= UI ================= */
+
   return (
     <div className="page details-page">
 
@@ -115,12 +116,27 @@ const PropertyDetails = () => {
       )}
 
       <h2>{property.title}</h2>
-      <p className="price big">₹{property.price.toLocaleString()}</p>
+
+      <p className="price big">
+        ₹{property.price.toLocaleString()}
+      </p>
+
       <p>{property.city}, {property.area}</p>
 
       <div className="details-tags">
         {property.type} • {property.purpose}
       </div>
+
+      {/* STATUS BADGE */}
+      {isUnavailable && (
+        <div style={{
+          marginTop: 8,
+          color: "#f87171",
+          fontWeight: 600
+        }}>
+          {property.status}
+        </div>
+      )}
 
       <h3>Description</h3>
       <p>{property.description}</p>
@@ -151,8 +167,8 @@ const PropertyDetails = () => {
         <p>Owner information unavailable</p>
       )}
 
-      {/* MESSAGE INPUT */}
-      {!isOwner && currentUser && (
+      {/* MESSAGE */}
+      {!isOwner && currentUser && !isUnavailable && (
         <textarea
           placeholder="Write a message to owner..."
           value={message}
@@ -167,6 +183,7 @@ const PropertyDetails = () => {
       )}
 
       {/* ACTIONS */}
+
       {isOwner && (
         <button
           onClick={deleteProperty}
@@ -176,13 +193,19 @@ const PropertyDetails = () => {
         </button>
       )}
 
-      {!isOwner && currentUser && (
+      {!isOwner && currentUser && !isUnavailable && (
         <button
           onClick={sendRequest}
           style={{ background: "#22c55e", marginTop: 20 }}
         >
           {property.purpose === "SALE" ? "Buy Property" : "Rent Property"}
         </button>
+      )}
+
+      {isUnavailable && (
+        <p style={{ marginTop: 16, color: "#9ca3af" }}>
+          This property is no longer available
+        </p>
       )}
 
       {!currentUser && (

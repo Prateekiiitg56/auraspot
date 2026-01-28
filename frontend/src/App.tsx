@@ -16,7 +16,7 @@ import Explore from "./pages/Explore";
 import PropertyDetails from "./pages/PropertyDetails";
 import { API } from "./services/api";
 import Notifications from "./pages/Notifications";
-
+import MyDeals from "./pages/MyDeals";
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -53,6 +53,8 @@ useEffect(() => {
         <Route path="/profile" element={<Profile user={user} />} />
         <Route path="/property/:id" element={<PropertyDetails />} />
         <Route path="/notifications" element={<Notifications />} />
+        <Route path="/my-deals" element={<MyDeals />} />
+
 
 
         <Route path="/login" element={<Login />} />

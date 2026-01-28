@@ -1,12 +1,12 @@
 const express = require("express");
 const Property = require("../models/Property");
 const User = require("../models/User");
+const Notification = require("../models/Notification");
 const multer = require("multer");
 
 const router = express.Router();
 
-
-// ================= MULTER =================
+/* ================= MULTER ================= */
 
 const storage = multer.diskStorage({
   destination: "uploads/",
@@ -17,27 +17,17 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-
-// ================= CREATE PROPERTY =================
+/* ================= CREATE PROPERTY ================= */
 
 router.post("/", upload.single("image"), async (req, res) => {
   try {
     const owner = await User.findOne({ email: req.body.ownerEmail });
+    if (!owner) return res.status(400).json({ message: "Owner not found" });
 
-    if (!owner) {
-      return res.status(400).json({ message: "Owner not found" });
-    }
-
-    let amenities = req.body.amenities;
-
-    if (Array.isArray(amenities)) {
-      amenities = amenities.flat().map(a => a.replace(/[\[\]"]/g, "").trim());
-    } else {
-      amenities = amenities
-        .split(",")
-        .map(a => a.trim())
-        .filter(Boolean);
-    }
+    const amenities = String(req.body.amenities || "")
+      .split(",")
+      .map(a => a.trim())
+      .filter(Boolean);
 
     const property = await Property.create({
       title: req.body.title,
@@ -51,81 +41,123 @@ router.post("/", upload.single("image"), async (req, res) => {
       amenities,
       description: req.body.description,
       image: req.file?.filename,
-      owner: owner._id
+      owner: owner._id,
+      status: "AVAILABLE"
     });
 
-    res.status(201).json(property);
-
+    res.json(property);
   } catch (err) {
-    console.error("CREATE PROPERTY ERROR:", err);
     res.status(500).json({ message: "Failed to add property" });
   }
 });
 
-// ================= GET ALL =================
+/* ================= EXPLORE (ONLY AVAILABLE) ================= */
 
 router.get("/", async (req, res) => {
-  const properties = await Property.find()
+  const properties = await Property.find({ status: "AVAILABLE" })
     .sort({ createdAt: -1 })
+    .populate("owner", "name email");
+
+  res.json(properties);
+});
+
+router.get("/all", async (req, res) => {
+  const properties = await Property.find()
     .populate("owner", "name email")
-    .populate("rentedBy", "name email");
+    .populate("assignedTo", "name email");
 
   res.json(properties);
 });
 
 
-// ================= GET ONE =================
+/* ================= OWNER LISTINGS ================= */
+
+router.get("/owner/:ownerId", async (req, res) => {
+  const properties = await Property.find({
+    owner: req.params.ownerId
+  }).sort({ createdAt: -1 });
+
+  res.json(properties);
+});
+
+/* ================= PROPERTY DETAILS ================= */
 
 router.get("/:id", async (req, res) => {
   const property = await Property.findById(req.params.id)
     .populate("owner", "name email")
-    .populate("rentedBy", "name email");
+    .populate("assignedTo", "name email");
 
   res.json(property);
 });
 
-
-// ================= DELETE =================
+/* ================= DELETE ================= */
 
 router.delete("/:id", async (req, res) => {
   await Property.findByIdAndDelete(req.params.id);
   res.json({ ok: true });
 });
 
-
-// ================= REQUEST RENT =================
-// (prepares for notifications system)
+/* ================= SEND REQUEST ================= */
 
 router.post("/:id/request", async (req, res) => {
-  const { renterEmail } = req.body;
+  try {
+    const user = await User.findOne({ email: req.body.email });
+    if (!user) return res.status(400).json({ message: "User not found" });
 
-  const renter = await User.findOne({ email: renterEmail });
-  if (!renter) return res.status(400).json({ message: "Renter not found" });
+    const property = await Property.findById(req.params.id)
+      .populate("owner");
 
-  const property = await Property.findById(req.params.id);
+    if (!property || property.status !== "AVAILABLE") {
+      return res.status(400).json({ message: "Property not available" });
+    }
 
-  if (property.status !== "AVAILABLE") {
-    return res.status(400).json({ message: "Not available" });
+    property.status = "REQUESTED";
+    property.assignedTo = user._id;
+    await property.save();
+
+    // Create notification for owner
+    await Notification.create({
+      from: user._id,
+      to: property.owner._id,
+      property: property._id,
+      action: property.purpose === "RENT" ? "RENT" : "BUY",
+      message: `${user.name || user.email} is interested in your ${property.type} for ${property.purpose}`
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to send request" });
   }
-
-  property.status = "REQUESTED";
-  property.rentedBy = renter._id;
-
-  await property.save();
-
-  res.json({ ok: true });
 });
 
-
-// ================= APPROVE RENT =================
+/* ================= OWNER ACCEPTS ================= */
 
 router.post("/:id/approve", async (req, res) => {
-  const property = await Property.findById(req.params.id);
+  try {
+    const property = await Property.findById(req.params.id);
 
-  property.status = "RENTED";
-  await property.save();
+    if (!property || property.status !== "REQUESTED") {
+      return res.status(400).json({ message: "Invalid state" });
+    }
 
-  res.json({ ok: true });
+    // Update property status to SOLD or BOOKED
+    property.status = property.purpose === "SALE" ? "SOLD" : "BOOKED";
+    await property.save();
+
+    // Delete the notification after accepting
+    if (req.body.notificationId) {
+      try {
+        await Notification.findByIdAndDelete(req.body.notificationId);
+      } catch (notifErr) {
+        console.log("Notification delete error (might already be deleted)");
+      }
+    }
+
+    res.json({ ok: true, property });
+  } catch (err) {
+    console.error("APPROVE ERROR:", err);
+    res.status(500).json({ message: "Failed to approve request" });
+  }
 });
 
 module.exports = router;

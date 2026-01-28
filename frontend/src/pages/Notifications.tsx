@@ -6,75 +6,121 @@ const Notifications = () => {
   const [notes, setNotes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const load = async () => {
-      if (!auth.currentUser?.email) return;
+  const loadNotifications = async () => {
+    try {
+      if (!auth.currentUser?.email) {
+        setLoading(false);
+        return;
+      }
 
-      // try owner notifications first
+      // 🔍 Get Mongo user
       const userRes = await fetch(
         `${API}/users/email/${auth.currentUser.email}`
       );
       const mongoUser = await userRes.json();
 
-      let res;
-
-      if (mongoUser?._id) {
-        res = await fetch(`${API}/notifications/owner/${mongoUser._id}`);
-      } else {
-        res = await fetch(`${API}/notifications/sender/${auth.currentUser.email}`);
+      if (!mongoUser?._id) {
+        setLoading(false);
+        return;
       }
 
-      const data = await res.json();
-      setNotes(data);
-      setLoading(false);
-    };
+      // 📩 Load owner inbox
+      const res = await fetch(
+        `${API}/notifications/owner/${mongoUser._id}`
+      );
 
-    load();
+      const data = await res.json();
+      setNotes(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Notification load error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadNotifications();
   }, []);
 
-  if (loading) return <div className="page">Loading notifications...</div>;
+  /* ================= ACCEPT REQUEST ================= */
 
-  if (notes.length === 0)
-    return (
-      <div className="page">
-        <h2>Notifications</h2>
-        <p>No notifications yet</p>
-      </div>
-    );
+  const acceptRequest = async (propertyId: string, notificationId: string) => {
+    try {
+      const res = await fetch(`${API}/properties/${propertyId}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          notificationId
+        })
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Approve failed");
+      }
+
+      alert("Deal accepted!");
+      
+      // Immediately remove from UI while fetching fresh data
+      setNotes(notes.filter(n => n._id !== notificationId));
+      
+      // Fetch fresh data
+      await loadNotifications();
+    } catch (err) {
+      console.error("Accept error:", err);
+      alert("Failed to accept deal");
+    }
+  };
+
+  if (loading) return <div className="page">Loading notifications...</div>;
 
   return (
     <div className="page">
       <h2>Notifications</h2>
 
-      {notes.map(n => (
-        <div key={n._id} className="notification-card">
+      {notes.length === 0 && <p>No activity yet</p>}
 
-          {/* OWNER VIEW */}
-          {n.ownerId && (
-            <>
-              <p>
-                <b>{n.from}</b> wants to{" "}
-                <b>{n.action.toLowerCase()}</b> your property
-              </p>
-            </>
-          )}
+      {notes.map(note => (
+        <div key={note._id} className="notification-card">
 
-          {/* SENDER VIEW */}
-          {!n.ownerId && (
-            <p>
-              You sent a <b>{n.action.toLowerCase()}</b> request
-            </p>
-          )}
+          <div className="note-main">
+            <b>{note.from?.name || note.from?.email}</b>{" "}
+            wants to{" "}
+            <b>{String(note.action).toLowerCase()}</b>{" "}
+            your property
+          </div>
 
-          {n.message && (
-            <div className="note-message">
-              "{n.message}"
+          {note.property && (
+            <div className="note-property">
+              {note.property.title} — ₹{note.property.price}
             </div>
           )}
 
-          <small>
-            {new Date(n.createdAt).toLocaleString()}
-          </small>
+          {note.message && (
+            <div className="note-message">
+              “{note.message}”
+            </div>
+          )}
+
+          <div className="note-footer">
+            <small>
+              {new Date(note.createdAt).toLocaleString()}
+            </small>
+
+            {/* ✅ PASS NOTIFICATION ID HERE */}
+            <button
+              className="accept-btn"
+              onClick={() =>
+                acceptRequest(
+                  note.property._id,
+                  note._id
+                )
+              }
+            >
+              Accept
+            </button>
+          </div>
+
         </div>
       ))}
     </div>
