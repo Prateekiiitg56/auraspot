@@ -36,19 +36,19 @@ const PropertyDetails = () => {
 
   const currentUser = auth.currentUser;
 
-  useEffect(() => {
-    const loadProperty = async () => {
-      try {
-        const res = await fetch(`${API}/properties/${id}`);
-        const data = await res.json();
-        setProperty(data);
-      } catch (err) {
-        console.error("Failed loading property", err);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const loadProperty = async () => {
+    try {
+      const res = await fetch(`${API}/properties/${id}`);
+      const data = await res.json();
+      setProperty(data);
+    } catch (err) {
+      console.error("Failed loading property", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     loadProperty();
   }, [id]);
 
@@ -75,6 +75,25 @@ const isUnavailable = property.status !== "AVAILABLE";
     navigate("/explore");
   };
 
+  /* ================= RESET PROPERTY (DEBUG) ================= */
+
+  const resetProperty = async () => {
+    try {
+      const res = await fetch(`${API}/properties/${property._id}/reset`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      });
+
+      if (!res.ok) throw new Error("Reset failed");
+
+      alert("Property reset to AVAILABLE!");
+      await loadProperty();
+    } catch (err) {
+      console.error("Reset error:", err);
+      alert("Failed to reset property");
+    }
+  };
+
   /* ================= SEND REQUEST ================= */
 
   const sendRequest = async () => {
@@ -86,20 +105,32 @@ const isUnavailable = property.status !== "AVAILABLE";
 
     if (isUnavailable) return alert("Property already booked");
 
-    await fetch(`${API}/notifications`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ownerId: property.owner._id,
-        propertyId: property._id,
-        from: currentUser.email,
-        action: property.purpose,
-        message
-      })
-    });
+    try {
+      // Send request via property endpoint (updates property status + creates notification)
+      const res = await fetch(`${API}/properties/${property._id}/request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: currentUser.email,
+          message
+        })
+      });
 
-    alert("Request sent to owner!");
-    setMessage("");
+      if (!res.ok) {
+        const error = await res.json();
+        console.error("Request failed with status:", res.status, error);
+        throw new Error(error.message || "Request failed");
+      }
+
+      alert("Request sent to owner!");
+      setMessage("");
+      
+      // Reload property to get updated status
+      await loadProperty();
+    } catch (err) {
+      console.error("Send request error:", err);
+      alert(`Failed to send request: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
   };
 
   /* ================= UI ================= */
@@ -185,12 +216,20 @@ const isUnavailable = property.status !== "AVAILABLE";
       {/* ACTIONS */}
 
       {isOwner && (
-        <button
-          onClick={deleteProperty}
-          style={{ background: "#ef4444", marginTop: 20 }}
-        >
-          Delete Property
-        </button>
+        <>
+          <button
+            onClick={deleteProperty}
+            style={{ background: "#ef4444", marginTop: 20, marginRight: 10 }}
+          >
+            Delete Property
+          </button>
+          <button
+            onClick={resetProperty}
+            style={{ background: "#f59e0b", marginTop: 20 }}
+          >
+            Reset to Available
+          </button>
+        </>
       )}
 
       {!isOwner && currentUser && !isUnavailable && (

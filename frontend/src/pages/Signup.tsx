@@ -2,6 +2,7 @@ import { useState } from "react";
 import { auth } from "../services/firebase";
 import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { useNavigate } from "react-router-dom";
+import { API } from "../services/api";
 
 const Signup = () => {
   const [name, setName] = useState("");
@@ -10,13 +11,29 @@ const Signup = () => {
   const navigate = useNavigate();
 
   const signup = async () => {
-    const res = await createUserWithEmailAndPassword(auth, email, password);
+    try {
+      const res = await createUserWithEmailAndPassword(auth, email, password);
 
-    await updateProfile(res.user, {
-      displayName: name
-    });
+      await updateProfile(res.user, {
+        displayName: name
+      });
 
-    navigate("/profile");
+      // Sync user to MongoDB
+      await fetch(`${API}/users/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firebaseUid: res.user.uid,
+          name: name,
+          email: email
+        })
+      });
+
+      navigate("/profile");
+    } catch (err) {
+      console.error("Signup error:", err);
+      alert("Failed to create account");
+    }
   };
 
   return (

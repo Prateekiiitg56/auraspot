@@ -45,7 +45,12 @@ router.get("/owner/:ownerId", async (req, res) => {
       .populate("property", "title price status")
       .sort({ createdAt: -1 });
 
-    res.json(notes);
+    // Filter out notifications where property is null or status is not REQUESTED
+    const activeNotes = notes.filter(
+      note => note.property && note.property.status === "REQUESTED"
+    );
+
+    res.json(activeNotes);
   } catch (err) {
     console.error("LOAD OWNER NOTES ERROR:", err);
     res.status(500).json({ message: "Failed loading notifications" });

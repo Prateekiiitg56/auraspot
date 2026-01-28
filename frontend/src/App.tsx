@@ -24,15 +24,23 @@ function App() {
 useEffect(() => {
   const unsub = onAuthStateChanged(auth, async currentUser => {
     if (currentUser) {
-      await fetch(`${API}/users/sync`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          firebaseUid: currentUser.uid,
-          name: currentUser.displayName,
-          email: currentUser.email
-        })
-      });
+      try {
+        console.log("Syncing user to MongoDB:", currentUser.email);
+        const res = await fetch(`${API}/users/sync`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            firebaseUid: currentUser.uid,
+            name: currentUser.displayName || currentUser.email?.split('@')[0],
+            email: currentUser.email
+          })
+        });
+        
+        const data = await res.json();
+        console.log("User synced:", data);
+      } catch (err) {
+        console.error("User sync error:", err);
+      }
     }
 
     setUser(currentUser);

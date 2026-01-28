@@ -44,14 +44,11 @@ const Notifications = () => {
 
   /* ================= ACCEPT REQUEST ================= */
 
-  const acceptRequest = async (propertyId: string, notificationId: string) => {
+  const acceptRequest = async (propertyId: string) => {
     try {
       const res = await fetch(`${API}/properties/${propertyId}/approve`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          notificationId
-        })
+        headers: { "Content-Type": "application/json" }
       });
 
       if (!res.ok) {
@@ -60,9 +57,6 @@ const Notifications = () => {
       }
 
       alert("Deal accepted!");
-      
-      // Immediately remove from UI while fetching fresh data
-      setNotes(notes.filter(n => n._id !== notificationId));
       
       // Fetch fresh data
       await loadNotifications();
@@ -107,15 +101,10 @@ const Notifications = () => {
               {new Date(note.createdAt).toLocaleString()}
             </small>
 
-            {/* ✅ PASS NOTIFICATION ID HERE */}
+            {/* ✅ ACCEPT BUTTON */}
             <button
               className="accept-btn"
-              onClick={() =>
-                acceptRequest(
-                  note.property._id,
-                  note._id
-                )
-              }
+              onClick={() => acceptRequest(note.property._id)}
             >
               Accept
             </button>

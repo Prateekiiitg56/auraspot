@@ -22,16 +22,32 @@ const MyDeals = () => {
 
   useEffect(() => {
     const loadDeals = async () => {
-      if (!auth.currentUser?.email) return;
+      if (!auth.currentUser?.email) {
+        setLoading(false);
+        return;
+      }
 
       try {
         // 🔍 get Mongo user
         const userRes = await fetch(
           `${API}/users/email/${auth.currentUser.email}`
         );
+        
+        if (!userRes.ok) {
+          console.error("Failed to fetch user:", userRes.status);
+          setLoading(false);
+          return;
+        }
+        
         const user = await userRes.json();
 
-        if (!user?._id) return;
+        if (!user?._id) {
+          console.error("User has no _id:", user);
+          setLoading(false);
+          return;
+        }
+
+        console.log("Loading deals for user:", user._id);
 
         // 📌 My listed properties (all statuses)
         const listedRes = await fetch(
@@ -46,7 +62,8 @@ const MyDeals = () => {
         const myDeals = all.filter(
           (p: any) =>
             p.assignedTo &&
-            (p.assignedTo === user._id || p.assignedTo?._id === user._id)
+            (p.assignedTo === user._id || p.assignedTo?._id === user._id) &&
+            (p.status === "BOOKED" || p.status === "SOLD")
         );
 
         setListed(listedData);
