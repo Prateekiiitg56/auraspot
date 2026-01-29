@@ -51,6 +51,34 @@ const propertySchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null
+    },
+
+    // Smart Property Score fields
+    viewCount: {
+      type: Number,
+      default: 0
+    },
+
+    contactRequests: {
+      type: Number,
+      default: 0
+    },
+
+    // Cached property score (updated when viewed/requested)
+    propertyScore: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100
+    },
+
+    // Score breakdown for display
+    scoreBreakdown: {
+      location: { type: Number, default: 0 },
+      priceFairness: { type: Number, default: 0 },
+      amenities: { type: Number, default: 0 },
+      demand: { type: Number, default: 0 },
+      ownerCredibility: { type: Number, default: 0 }
     }
   },
   { timestamps: true }

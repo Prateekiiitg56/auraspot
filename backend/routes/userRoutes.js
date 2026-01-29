@@ -1,5 +1,7 @@
 const router = require("express").Router();
 const User = require("../models/User");
+const Property = require("../models/Property");
+const { calculateTrustBadge, getBadgeInfo } = require("../utils/scoreCalculator");
 
 // Store OTPs in memory (in production, use Redis or database)
 const otpStore = {};
@@ -9,27 +11,6 @@ const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-router.post("/sync", async (req, res) => {
-  try {
-    const { firebaseUid, name, email } = req.body;
-
-    let user = await User.findOne({ firebaseUid });
-
-    if (!user) {
-      user = await User.create({
-        firebaseUid,
-        name,
-        email,
-        role: "USER"
-      });
-    }
-
-    res.json(user);
-  } catch (err) {
-    console.error("USER SYNC ERROR:", err);
-    res.status(500).json({ message: "Failed to sync user" });
-  }
-});
 router.get("/email/:email", async (req, res) => {
   try {
     const user = await User.findOne({ email: req.params.email });
@@ -197,6 +178,10 @@ router.post("/verify-phone-otp", async (req, res) => {
     // Clear OTP after successful verification
     delete otpStore[phone];
 
+    // Mark phone as verified
+    user.phoneVerified = true;
+    await user.save();
+
     res.json({ 
       message: "Phone verified and updated successfully",
       user
@@ -204,6 +189,149 @@ router.post("/verify-phone-otp", async (req, res) => {
   } catch (err) {
     console.error("VERIFY PHONE OTP ERROR:", err);
     res.status(500).json({ message: "Failed to verify phone OTP" });
+  }
+});
+
+/* ================= USER STATS (Properties + Active Deals) ================= */
+
+router.get("/stats/:userId", async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    
+    // Count properties owned by user
+    const propertiesListed = await Property.countDocuments({ owner: userId });
+    
+    // Count active deals (REQUESTED or BOOKED status where user is owner)
+    const activeDeals = await Property.countDocuments({ 
+      owner: userId,
+      status: { $in: ["REQUESTED", "BOOKED"] }
+    });
+    
+    // Count completed deals (SOLD status)
+    const completedDeals = await Property.countDocuments({ 
+      owner: userId,
+      status: "SOLD"
+    });
+    
+    // Get user's trust info
+    const user = await User.findById(userId);
+    
+    res.json({
+      propertiesListed,
+      activeDeals,
+      completedDeals,
+      totalDeals: activeDeals + completedDeals,
+      rating: user?.rating || 0,
+      totalRatings: user?.totalRatings || 0,
+      successfulDeals: user?.successfulDeals || 0,
+      trustBadge: user?.trustBadge || "NEW_SELLER",
+      badgeInfo: getBadgeInfo(user?.trustBadge)
+    });
+  } catch (err) {
+    console.error("USER STATS ERROR:", err);
+    res.status(500).json({ message: "Failed to get user stats" });
+  }
+});
+
+/* ================= RATE OWNER (After Deal) ================= */
+
+router.post("/rate", async (req, res) => {
+  try {
+    const { ownerEmail, raterEmail, rating, propertyId } = req.body;
+    
+    if (!ownerEmail || !rating) {
+      return res.status(400).json({ message: "Owner email and rating are required" });
+    }
+    
+    if (rating < 1 || rating > 5) {
+      return res.status(400).json({ message: "Rating must be between 1 and 5" });
+    }
+    
+    const owner = await User.findOne({ email: ownerEmail });
+    if (!owner) {
+      return res.status(404).json({ message: "Owner not found" });
+    }
+    
+    // Calculate new average rating
+    const currentTotal = (owner.rating || 0) * (owner.totalRatings || 0);
+    const newTotalRatings = (owner.totalRatings || 0) + 1;
+    const newRating = (currentTotal + rating) / newTotalRatings;
+    
+    owner.rating = Math.round(newRating * 10) / 10; // Round to 1 decimal
+    owner.totalRatings = newTotalRatings;
+    owner.trustBadge = calculateTrustBadge(owner);
+    
+    await owner.save();
+    
+    res.json({
+      message: "Rating submitted successfully",
+      newRating: owner.rating,
+      totalRatings: owner.totalRatings,
+      trustBadge: owner.trustBadge,
+      badgeInfo: getBadgeInfo(owner.trustBadge)
+    });
+  } catch (err) {
+    console.error("RATE OWNER ERROR:", err);
+    res.status(500).json({ message: "Failed to submit rating" });
+  }
+});
+
+/* ================= GET OWNER PUBLIC PROFILE ================= */
+
+router.get("/owner/:ownerId", async (req, res) => {
+  try {
+    const owner = await User.findById(req.params.ownerId)
+      .select("name email phone location verified rating totalRatings successfulDeals trustBadge isGoogleLogin emailVerified phoneVerified bio socials createdAt");
+    
+    if (!owner) {
+      return res.status(404).json({ message: "Owner not found" });
+    }
+    
+    // Get owner's properties count
+    const propertiesCount = await Property.countDocuments({ owner: req.params.ownerId });
+    
+    const ownerObj = owner.toObject();
+    ownerObj.propertiesCount = propertiesCount;
+    ownerObj.badgeInfo = getBadgeInfo(owner.trustBadge);
+    
+    res.json(ownerObj);
+  } catch (err) {
+    console.error("GET OWNER ERROR:", err);
+    res.status(500).json({ message: "Failed to get owner profile" });
+  }
+});
+
+/* ================= UPDATE GOOGLE LOGIN STATUS (on sync) ================= */
+
+router.post("/sync", async (req, res) => {
+  try {
+    const { firebaseUid, name, email, isGoogleLogin } = req.body;
+
+    let user = await User.findOne({ firebaseUid });
+
+    if (!user) {
+      user = await User.create({
+        firebaseUid,
+        name,
+        email,
+        role: "USER",
+        isGoogleLogin: isGoogleLogin || false,
+        emailVerified: true, // Firebase already verifies email
+        trustBadge: "NEW_SELLER"
+      });
+    } else {
+      // Update Google login status if changed
+      if (isGoogleLogin && !user.isGoogleLogin) {
+        user.isGoogleLogin = true;
+        user.trustBadge = calculateTrustBadge(user);
+        await user.save();
+      }
+    }
+
+    res.json(user);
+  } catch (err) {
+    console.error("USER SYNC ERROR:", err);
+    res.status(500).json({ message: "Failed to sync user" });
   }
 });
 

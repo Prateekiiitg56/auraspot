@@ -61,6 +61,50 @@ const userSchema = new mongoose.Schema({
     linkedin: { type: String, default: "" },
     instagram: { type: String, default: "" },
     youtube: { type: String, default: "" }
+  },
+
+  // Trust System Fields
+  rating: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 5
+  },
+
+  totalRatings: {
+    type: Number,
+    default: 0
+  },
+
+  successfulDeals: {
+    type: Number,
+    default: 0
+  },
+
+  // Trust badge calculated based on verification + deals + rating
+  // NEW_SELLER, VERIFIED_OWNER, TRUSTED_SELLER, TOP_SELLER
+  trustBadge: {
+    type: String,
+    enum: ["NEW_SELLER", "VERIFIED_OWNER", "TRUSTED_SELLER", "TOP_SELLER"],
+    default: "NEW_SELLER"
+  },
+
+  // Google login indicator
+  isGoogleLogin: {
+    type: Boolean,
+    default: false
+  },
+
+  // Email verified indicator
+  emailVerified: {
+    type: Boolean,
+    default: false
+  },
+
+  // Phone verified indicator
+  phoneVerified: {
+    type: Boolean,
+    default: false
   }
 
 }, { timestamps: true });

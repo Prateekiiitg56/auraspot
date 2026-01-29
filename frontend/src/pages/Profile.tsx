@@ -1,9 +1,9 @@
 import { signOut } from "firebase/auth";
 import type { User } from "firebase/auth";
 import { auth } from "../services/firebase";
-import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { API } from "../services/api";
+import { useTheme } from "../context/ThemeContext";
 
 interface UserProfile {
   _id: string;
@@ -15,6 +15,14 @@ interface UserProfile {
   role: string;
   persona?: string;
   bio?: string;
+  rating?: number;
+  totalRatings?: number;
+  successfulDeals?: number;
+  trustBadge?: string;
+  isGoogleLogin?: boolean;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
+  createdAt?: string;
   socials?: {
     facebook?: string;
     twitter?: string;
@@ -29,35 +37,50 @@ interface UserProfile {
   }>;
 }
 
+interface UserStats {
+  propertiesListed: number;
+  activeDeals: number;
+  completedDeals: number;
+  totalDeals: number;
+  rating: number;
+  totalRatings: number;
+  successfulDeals: number;
+  trustBadge: string;
+  badgeInfo: {
+    emoji: string;
+    label: string;
+    color: string;
+  };
+}
+
 const Profile = ({ user }: { user: User | null }) => {
+  const { darkMode } = useTheme();
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [showVerification, setShowVerification] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [darkMode, setDarkMode] = useState(false);
-  
+
   // Edit form state
-  const [editName, setEditName] = useState("");
-  const [editPhone, setEditPhone] = useState("");
-  const [editLocation, setEditLocation] = useState("");
-  const [editBio, setEditBio] = useState("");
-  const [editSkills] = useState<string[]>(["Real Estate", "Property Management", "Investment"]);
-  const [editSocials, setEditSocials] = useState({
-    facebook: "",
-    twitter: "",
-    linkedin: "",
-    instagram: "",
-    youtube: ""
+  const [editForm, setEditForm] = useState({
+    name: "",
+    phone: "",
+    location: "",
+    bio: "",
+    socials: {
+      facebook: "",
+      twitter: "",
+      linkedin: "",
+      instagram: "",
+      youtube: ""
+    }
   });
-  
+
   // Phone OTP verification state
-  const [showPhoneOTP, setShowPhoneOTP] = useState(false);
-  const [tempPhone, setTempPhone] = useState("");
-  const [phoneOTP, setPhoneOTP] = useState("");
+  const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
-  const [otpLoading, setOtpLoading] = useState(false);
-  
-  // Verification form state
+
+  // Document verification state
+  const [showVerification, setShowVerification] = useState(false);
   const [documentType, setDocumentType] = useState("AADHAR");
   const [documentNumber, setDocumentNumber] = useState("");
   const [verifying, setVerifying] = useState(false);
@@ -67,19 +90,18 @@ const Profile = ({ user }: { user: User | null }) => {
   }, [user]);
 
   const sendPhoneOTP = async () => {
-    if (!user?.email || !tempPhone.trim()) {
+    if (!user?.email || !editForm.phone.trim()) {
       alert("Please enter a valid phone number");
       return;
     }
 
-    setOtpLoading(true);
     try {
       const res = await fetch(`${API}/users/send-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: user.email,
-          phone: tempPhone
+          phone: editForm.phone
         })
       });
 
@@ -93,36 +115,31 @@ const Profile = ({ user }: { user: User | null }) => {
     } catch (err) {
       console.error("Failed to send OTP:", err);
       alert("Failed to send OTP");
-    } finally {
-      setOtpLoading(false);
     }
   };
 
   const verifyPhoneOTP = async () => {
-    if (!user?.email || !tempPhone.trim() || !phoneOTP.trim()) {
+    if (!user?.email || !editForm.phone.trim() || !otp.trim()) {
       alert("Please enter phone and OTP");
       return;
     }
 
-    setOtpLoading(true);
     try {
       const res = await fetch(`${API}/users/verify-phone-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: user.email,
-          phone: tempPhone,
-          otp: phoneOTP
+          phone: editForm.phone,
+          otp: otp
         })
       });
 
       if (res.ok) {
         const updated = await res.json();
         setProfile(updated.user);
-        setEditPhone(updated.user.phone);
-        setShowPhoneOTP(false);
-        setTempPhone("");
-        setPhoneOTP("");
+        setEditForm({ ...editForm, phone: updated.user.phone });
+        setOtp("");
         setOtpSent(false);
         alert("Phone verified and updated successfully!");
       } else {
@@ -132,8 +149,42 @@ const Profile = ({ user }: { user: User | null }) => {
     } catch (err) {
       console.error("Failed to verify OTP:", err);
       alert("Failed to verify OTP");
+    }
+  };
+
+  const submitVerification = async () => {
+    if (!user?.email || !documentNumber.trim()) {
+      alert("Please enter a document number");
+      return;
+    }
+
+    setVerifying(true);
+    try {
+      const res = await fetch(`${API}/users/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: user.email,
+          documentType: documentType,
+          documentNumber: documentNumber
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setProfile(data.user);
+        setShowVerification(false);
+        setDocumentNumber("");
+        alert("Verification submitted successfully! Your verification is pending review.");
+      } else {
+        const error = await res.json();
+        alert(error.message || "Failed to submit verification");
+      }
+    } catch (err) {
+      console.error("Failed to submit verification:", err);
+      alert("Failed to submit verification");
     } finally {
-      setOtpLoading(false);
+      setVerifying(false);
     }
   };
 
@@ -148,17 +199,28 @@ const Profile = ({ user }: { user: User | null }) => {
       if (res.ok) {
         const data = await res.json();
         setProfile(data);
-        setEditName(data.name || "");
-        setEditPhone(data.phone || "");
-        setEditLocation(data.location || "");
-        setEditBio(data.bio || "");
-        setEditSocials(data.socials || {
-          facebook: "",
-          twitter: "",
-          linkedin: "",
-          instagram: "",
-          youtube: ""
+        setEditForm({
+          name: data.name || "",
+          phone: data.phone || "",
+          location: data.location || "",
+          bio: data.bio || "",
+          socials: data.socials || {
+            facebook: "",
+            twitter: "",
+            linkedin: "",
+            instagram: "",
+            youtube: ""
+          }
         });
+        
+        // Fetch user stats
+        if (data._id) {
+          const statsRes = await fetch(`${API}/users/stats/${data._id}`);
+          if (statsRes.ok) {
+            const statsData = await statsRes.json();
+            setUserStats(statsData);
+          }
+        }
       }
     } catch (err) {
       console.error("Failed to load profile:", err);
@@ -176,11 +238,11 @@ const Profile = ({ user }: { user: User | null }) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: user.email,
-          name: editName,
-          phone: editPhone,
-          location: editLocation,
-          bio: editBio,
-          socials: editSocials
+          name: editForm.name,
+          phone: editForm.phone,
+          location: editForm.location,
+          bio: editForm.bio,
+          socials: editForm.socials
         })
       });
 
@@ -191,50 +253,12 @@ const Profile = ({ user }: { user: User | null }) => {
         alert("Profile updated successfully!");
       } else {
         const error = await res.text();
-        console.error("Failed to update profile:", error);
-        alert("Failed to update profile: " + error);
+        alert(error || "Failed to save profile");
       }
     } catch (err) {
-      console.error("Failed to update profile:", err);
-      alert("Failed to update profile: " + err);
+      console.error("Failed to save profile:", err);
+      alert("Failed to save profile");
     }
-  };
-
-  const submitVerification = async () => {
-    if (!user?.email || !documentNumber.trim()) {
-      alert("Please enter document number");
-      return;
-    }
-
-    setVerifying(true);
-    try {
-      const res = await fetch(`${API}/users/verify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: user.email,
-          documentType,
-          documentNumber
-        })
-      });
-
-      if (res.ok) {
-        await loadProfile();
-        setShowVerification(false);
-        setDocumentNumber("");
-        alert("Verification submitted successfully! Your account is now verified.");
-      }
-    } catch (err) {
-      console.error("Verification failed:", err);
-      alert("Failed to submit verification");
-    } finally {
-      setVerifying(false);
-    }
-  };
-
-  const logout = async () => {
-    await signOut(auth);
-    alert("Logged out!");
   };
 
   if (!user) {
@@ -251,74 +275,53 @@ const Profile = ({ user }: { user: User | null }) => {
   }
 
   return (
-    <div style={{ 
-      maxWidth: "1100px", 
+    <div style={{
+      maxWidth: "1400px",
       margin: "0 auto",
-      background: darkMode ? "#1a1a2e" : "#e8e8e8",
+      background: "var(--bg-primary)",
       minHeight: "100vh",
-      padding: "40px 20px",
+      padding: "20px",
       transition: "background 0.3s"
     }}>
-      {/* Main Card Container */}
-      <div style={{
-        background: darkMode ? "#2d2d44" : "white",
-        borderRadius: "12px",
-        boxShadow: darkMode ? "0 4px 20px rgba(0,0,0,0.5)" : "0 4px 20px rgba(0,0,0,0.1)",
-        overflow: "hidden"
-      }}>
-        {/* Top Section with Profile Image and Info */}
-        <div style={{
-          background: darkMode ? "#1e1e2f" : "#f5f5f5",
-          padding: "50px 40px 30px",
-          position: "relative"
-        }}>
-          {/* Dark Mode Toggle */}
-          <div style={{
-            position: "absolute",
-            top: "20px",
-            right: "20px"
-          }}>
-            <button
-              onClick={() => setDarkMode(!darkMode)}
-              style={{
-                padding: "8px 16px",
-                background: darkMode ? "#3d3d5c" : "white",
-                color: darkMode ? "white" : "#374151",
-                border: darkMode ? "1px solid #555" : "1px solid #ddd",
-                borderRadius: "20px",
-                cursor: "pointer",
-                fontWeight: "600",
-                fontSize: "13px",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
-              }}
-            >
-              {darkMode ? "☀️" : "🌙"}
-            </button>
-          </div>
 
-          <div style={{ display: "flex", gap: "40px", alignItems: "flex-start" }}>
-            {/* Profile Image */}
-            <div style={{ position: "relative" }}>
-              <div style={{
-                width: "120px",
-                height: "120px",
-                borderRadius: "50%",
-                background: darkMode ? "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" : "#f0f0f0",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "56px",
-                border: "2px solid " + (darkMode ? "rgba(255,255,255,0.1)" : "#e5e5e5"),
-                boxShadow: darkMode ? "0 2px 8px rgba(0,0,0,0.3)" : "0 1px 3px rgba(0,0,0,0.1)"
-              }}>
-                👤
-              </div>
+      {/* Main Content Grid */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "320px 1fr",
+        gap: "20px"
+      }}>
+        {/* LEFT SIDEBAR - Profile Card */}
+        <div style={{
+          background: darkMode ? "#1a1a2e" : "white",
+          borderRadius: "12px",
+          padding: "30px",
+          boxShadow: darkMode ? "0 2px 8px rgba(0,0,0,0.3)" : "0 2px 8px rgba(0,0,0,0.08)",
+          height: "fit-content"
+        }}>
+          {/* Profile Image */}
+          <div style={{
+            textAlign: "center",
+            marginBottom: "20px"
+          }}>
+            <div style={{
+              width: "100px",
+              height: "100px",
+              borderRadius: "50%",
+              background: darkMode ? "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" : "#e0e7ff",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "48px",
+              border: "3px solid " + (darkMode ? "#252540" : "#f3f4f6"),
+              position: "relative"
+            }}>
+              👤
               {profile?.verified && (
                 <div style={{
                   position: "absolute",
-                  bottom: "0px",
-                  right: "0px",
-                  background: "#333",
+                  bottom: "-5px",
+                  right: "-5px",
+                  background: "#10b981",
                   color: "white",
                   borderRadius: "50%",
                   width: "32px",
@@ -328,489 +331,271 @@ const Profile = ({ user }: { user: User | null }) => {
                   justifyContent: "center",
                   fontSize: "16px",
                   fontWeight: "700",
-                  border: "2px solid white"
+                  border: "3px solid " + (darkMode ? "#1a1a2e" : "white")
                 }}>
                   ✓
                 </div>
               )}
             </div>
-
-            {/* Name and Info */}
-            <div style={{ flex: 1 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div style={{ flex: 1 }}>
-                  <h1 style={{
-                    margin: "0 0 4px 0",
-                    fontSize: "24px",
-                    color: darkMode ? "#f5f5f5" : "#000",
-                    fontWeight: "600",
-                    letterSpacing: "-0.3px"
-                  }}>
-                    {profile?.name || "User Name"}
-                  </h1>
-                  
-                  <div style={{
-                    display: "flex",
-                    gap: "8px",
-                    marginBottom: "12px",
-                    flexWrap: "wrap"
-                  }}>
-                    <span style={{
-                      background: "transparent",
-                      color: darkMode ? "#a0a0b8" : "#666",
-                      padding: "0",
-                      borderRadius: "0",
-                      fontSize: "13px",
-                      fontWeight: "500"
-                    }}>
-                      {profile?.role === "ADMIN" ? "Admin" : profile?.persona === "BUYER" ? "Buyer" : profile?.persona === "SELLER" ? "Seller" : "User"}
-                    </span>
-                    {profile?.verified && (
-                      <span style={{
-                        background: "transparent",
-                        color: "#000",
-                        padding: "0",
-                        borderRadius: "0",
-                        fontSize: "13px",
-                        fontWeight: "500"
-                      }}>
-                        · Verified
-                      </span>
-                    )}
-                  </div>
-
-                  <div style={{
-                    color: darkMode ? "#999" : "#666",
-                    fontSize: "13px",
-                    marginBottom: "6px",
-                    fontWeight: "500"
-                  }}>
-                    {profile?.email}
-                  </div>
-                  {profile?.location && (
-                    <div style={{
-                      color: darkMode ? "#999" : "#666",
-                      fontSize: "13px",
-                      fontWeight: "500"
-                    }}>
-                      {profile.location}
-                    </div>
-                  )}
-                </div>
-
-                {/* Social Icons */}
-                <div style={{ display: "flex", gap: "12px", marginTop: "8px" }}>
-                  {profile?.socials?.facebook && (
-                    <a
-                      href={profile.socials.facebook.startsWith("http") ? profile.socials.facebook : `https://facebook.com/${profile.socials.facebook}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        width: "28px",
-                        height: "28px",
-                        borderRadius: "50%",
-                        background: darkMode ? "#333" : "#f0f0f0",
-                        border: "1px solid " + (darkMode ? "#555" : "#ddd"),
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: darkMode ? "#fff" : "#000",
-                        fontSize: "14px",
-                        cursor: "pointer",
-                        textDecoration: "none",
-                        transition: "all 0.2s"
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = darkMode ? "#444" : "#e8e8e8";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = darkMode ? "#333" : "#f0f0f0";
-                      }}
-                    >f</a>
-                  )}
-                  {profile?.socials?.twitter && (
-                    <a
-                      href={profile.socials.twitter.startsWith("http") ? profile.socials.twitter : `https://twitter.com/${profile.socials.twitter}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        width: "28px",
-                        height: "28px",
-                        borderRadius: "50%",
-                        background: darkMode ? "#333" : "#f0f0f0",
-                        border: "1px solid " + (darkMode ? "#555" : "#ddd"),
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: darkMode ? "#fff" : "#000",
-                        fontSize: "14px",
-                        cursor: "pointer",
-                        textDecoration: "none",
-                        transition: "all 0.2s"
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = darkMode ? "#444" : "#e8e8e8";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = darkMode ? "#333" : "#f0f0f0";
-                      }}
-                    >𝕏</a>
-                  )}
-                  {profile?.socials?.linkedin && (
-                    <a
-                      href={profile.socials.linkedin.startsWith("http") ? profile.socials.linkedin : `https://linkedin.com/in/${profile.socials.linkedin}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        width: "28px",
-                        height: "28px",
-                        borderRadius: "50%",
-                        background: darkMode ? "#333" : "#f0f0f0",
-                        border: "1px solid " + (darkMode ? "#555" : "#ddd"),
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: darkMode ? "#fff" : "#000",
-                        fontSize: "14px",
-                        cursor: "pointer",
-                        textDecoration: "none",
-                        transition: "all 0.2s"
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = darkMode ? "#444" : "#e8e8e8";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = darkMode ? "#333" : "#f0f0f0";
-                      }}
-                    >in</a>
-                  )}
-                  {profile?.socials?.instagram && (
-                    <a
-                      href={profile.socials.instagram.startsWith("http") ? profile.socials.instagram : `https://instagram.com/${profile.socials.instagram}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        width: "28px",
-                        height: "28px",
-                        borderRadius: "50%",
-                        background: darkMode ? "#333" : "#f0f0f0",
-                        border: "1px solid " + (darkMode ? "#555" : "#ddd"),
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: darkMode ? "#fff" : "#000",
-                        fontSize: "14px",
-                        cursor: "pointer",
-                        textDecoration: "none",
-                        transition: "all 0.2s"
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = darkMode ? "#444" : "#e8e8e8";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = darkMode ? "#333" : "#f0f0f0";
-                      }}
-                    >@</a>
-                  )}
-                  {profile?.socials?.youtube && (
-                    <a
-                      href={profile.socials.youtube.startsWith("http") ? profile.socials.youtube : `https://youtube.com/@${profile.socials.youtube}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        width: "28px",
-                        height: "28px",
-                        borderRadius: "50%",
-                        background: darkMode ? "#333" : "#f0f0f0",
-                        border: "1px solid " + (darkMode ? "#555" : "#ddd"),
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: darkMode ? "#fff" : "#000",
-                        fontSize: "14px",
-                        cursor: "pointer",
-                        textDecoration: "none",
-                        transition: "all 0.2s"
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = darkMode ? "#444" : "#e8e8e8";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = darkMode ? "#333" : "#f0f0f0";
-                      }}
-                    >▶</a>
-                  )}
-                </div>
-              </div>
-
-              {/* Stats */}
-              <div style={{
-                display: "flex",
-                gap: "32px",
-                marginTop: "20px",
-                paddingTop: "20px",
-                borderTop: "1px solid " + (darkMode ? "#333" : "#e5e5e5")
-              }}>
-                <div style={{ textAlign: "center" }}>
-                  <div style={{
-                    fontSize: "22px",
-                    fontWeight: "600",
-                    color: darkMode ? "#fff" : "#000",
-                    letterSpacing: "-0.3px"
-                  }}>12</div>
-                  <div style={{
-                    fontSize: "12px",
-                    color: darkMode ? "#999" : "#666",
-                    fontWeight: "500",
-                    marginTop: "4px"
-                  }}>Properties</div>
-                </div>
-                <div style={{ textAlign: "center" }}>
-                  <div style={{
-                    fontSize: "22px",
-                    fontWeight: "600",
-                    color: darkMode ? "#fff" : "#000",
-                    letterSpacing: "-0.3px"
-                  }}>5</div>
-                  <div style={{
-                    fontSize: "12px",
-                    color: darkMode ? "#999" : "#666",
-                    fontWeight: "500",
-                    marginTop: "4px"
-                  }}>Active Deals</div>
-                </div>
-                <button
-                  onClick={() => setIsEditing(!isEditing)}
-                  style={{
-                    padding: "8px 28px",
-                    background: darkMode ? "#333" : "#000",
-                    color: "white",
-                    border: "1px solid " + (darkMode ? "#555" : "#000"),
-                    borderRadius: "6px",
-                    cursor: "pointer",
-                    fontWeight: "600",
-                    fontSize: "13px",
-                    boxShadow: "none",
-                    transition: "all 0.2s",
-                    letterSpacing: "-0.2px"
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.background = darkMode ? "#444" : "#333";
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.background = darkMode ? "#333" : "#000";
-                  }}
-                >
-                  {isEditing ? "Cancel" : "Edit Profile"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Content Section */}
-        <div style={{ padding: "40px" }}>
-          {/* Core Skills */}
-          <div style={{ marginBottom: "35px" }}>
-            <h3 style={{
-              fontSize: "16px",
-              fontWeight: "700",
-              color: darkMode ? "white" : "#1f2937",
-              marginBottom: "15px"
-            }}>
-              My Core Skills:
-            </h3>
-            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-              {editSkills.map((skill, idx) => (
-                <span key={idx} style={{
-                  background: idx === 0 ? "#ff6b35" : darkMode ? "#3d3d5c" : "#f3f4f6",
-                  color: idx === 0 ? "white" : darkMode ? "white" : "#374151",
-                  padding: "8px 20px",
-                  borderRadius: "20px",
-                  fontSize: "13px",
-                  fontWeight: "600",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px"
-                }}>
-                  {skill}
-                  {idx === 0 && <span>⭐⭐⭐</span>}
-                  {idx === 1 && <span>⭐⭐</span>}
-                  {idx === 2 && <span>⭐</span>}
-                </span>
-              ))}
-            </div>
           </div>
 
-          {/* Contact Section */}
-          <div style={{
-            background: darkMode ? "#3d3d5c" : "#f9fafb",
-            borderRadius: "12px",
-            padding: "25px",
-            marginBottom: "35px",
-            border: darkMode ? "1px solid #555" : "1px solid #e5e7eb"
+          {/* Name */}
+          <h2 style={{
+            fontSize: "22px",
+            fontWeight: "600",
+            color: darkMode ? "#fff" : "#111827",
+            marginBottom: "4px",
+            textAlign: "center"
           }}>
-            <h3 style={{
-              fontSize: "16px",
-              fontWeight: "700",
-              color: darkMode ? "white" : "#1f2937",
-              marginBottom: "20px"
-            }}>
-              📞 Contact Information
-            </h3>
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-              gap: "20px"
-            }}>
-              {/* Email Card */}
-              <div style={{
-                background: darkMode ? "#2d2d44" : "white",
-                borderRadius: "10px",
-                padding: "20px",
-                border: darkMode ? "1px solid #444" : "1px solid #e5e7eb"
-              }}>
-                <div style={{
-                  fontSize: "24px",
-                  marginBottom: "10px"
-                }}>
-                  📧
-                </div>
-                <div style={{
-                  fontSize: "12px",
-                  color: darkMode ? "#a0a0b8" : "#6b7280",
-                  marginBottom: "8px",
-                  fontWeight: "600"
-                }}>
-                  Email
-                </div>
-                <div style={{
-                  fontSize: "14px",
-                  color: darkMode ? "white" : "#1f2937",
-                  fontWeight: "600",
-                  wordBreak: "break-all"
-                }}>
-                  {profile?.email || "Not provided"}
-                </div>
-              </div>
+            {profile?.name || "User Name"}
+          </h2>
 
-              {/* Phone Card */}
-              <div style={{
-                background: darkMode ? "#2d2d44" : "white",
-                borderRadius: "10px",
-                padding: "20px",
-                border: darkMode ? "1px solid #444" : "1px solid #e5e7eb"
-              }}>
-                <div style={{
-                  fontSize: "24px",
-                  marginBottom: "10px"
-                }}>
-                  📱
-                </div>
-                <div style={{
-                  fontSize: "12px",
-                  color: darkMode ? "#a0a0b8" : "#6b7280",
-                  marginBottom: "8px",
-                  fontWeight: "600"
-                }}>
-                  Phone
-                </div>
-                <div style={{
-                  fontSize: "14px",
-                  color: darkMode ? "white" : "#1f2937",
-                  fontWeight: "600"
-                }}>
-                  {profile?.phone || "Not provided"}
-                </div>
-              </div>
+          {/* Role Badge */}
+          <div style={{ textAlign: "center", marginBottom: "20px" }}>
+            <span style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "4px 12px",
+              background: darkMode ? "#252540" : "#f3f4f6",
+              color: darkMode ? "#a0a0b8" : "#6b7280",
+              borderRadius: "6px",
+              fontSize: "12px",
+              fontWeight: "500"
+            }}>
+              {profile?.verified && <span style={{ color: "#10b981" }}>✓</span>}
+              {profile?.role === "ADMIN" ? "Admin" : profile?.persona === "BUYER" ? "Buyer" : profile?.persona === "SELLER" ? "Seller" : "User"}
+              {profile?.verified && " · Verified"}
+            </span>
+          </div>
 
-              {/* Location Card */}
-              <div style={{
-                background: darkMode ? "#2d2d44" : "white",
-                borderRadius: "10px",
-                padding: "20px",
-                border: darkMode ? "1px solid #444" : "1px solid #e5e7eb"
+          {/* Trust Badge */}
+          {userStats?.badgeInfo && (
+            <div style={{ textAlign: "center", marginBottom: "16px" }}>
+              <span style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "6px 14px",
+                background: `${userStats.badgeInfo.color}20`,
+                color: userStats.badgeInfo.color,
+                borderRadius: "20px",
+                fontSize: "13px",
+                fontWeight: "600",
+                border: `1px solid ${userStats.badgeInfo.color}40`
               }}>
-                <div style={{
-                  fontSize: "24px",
-                  marginBottom: "10px"
-                }}>
-                  📍
-                </div>
-                <div style={{
-                  fontSize: "12px",
-                  color: darkMode ? "#a0a0b8" : "#6b7280",
-                  marginBottom: "8px",
-                  fontWeight: "600"
-                }}>
-                  Location
-                </div>
-                <div style={{
-                  fontSize: "14px",
-                  color: darkMode ? "white" : "#1f2937",
-                  fontWeight: "600"
-                }}>
-                  {profile?.location || "Not provided"}
-                </div>
+                {userStats.badgeInfo.emoji} {userStats.badgeInfo.label}
+              </span>
+            </div>
+          )}
+
+          {/* Rating Display */}
+          {userStats && userStats.totalRatings > 0 && (
+            <div style={{ textAlign: "center", marginBottom: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "4px" }}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <span key={star} style={{ color: star <= Math.round(userStats.rating) ? "#f59e0b" : (darkMode ? "#374151" : "#e5e7eb"), fontSize: "18px" }}>
+                    ★
+                  </span>
+                ))}
+                <span style={{ marginLeft: "8px", color: darkMode ? "#9ca3af" : "#6b7280", fontSize: "14px" }}>
+                  {userStats.rating.toFixed(1)} ({userStats.totalRatings} reviews)
+                </span>
               </div>
+            </div>
+          )}
+
+          {/* Member Since */}
+          <div style={{
+            textAlign: "center",
+            color: darkMode ? "#6b7280" : "#9ca3af",
+            fontSize: "13px",
+            marginBottom: "24px",
+            fontWeight: "500"
+          }}>
+            Member since {profile?.createdAt ? new Date(profile.createdAt).getFullYear() : "2024"}
+          </div>
+
+          {/* Stats */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "12px",
+            marginBottom: "24px",
+            paddingBottom: "24px",
+            borderBottom: "1px solid " + (darkMode ? "#252540" : "#f3f4f6")
+          }}>
+            <div style={{ textAlign: "center" }}>
+              <div style={{
+                fontSize: "24px",
+                fontWeight: "600",
+                color: darkMode ? "#fff" : "#111827",
+                marginBottom: "4px"
+              }}>{userStats?.propertiesListed || 0}</div>
+              <div style={{
+                fontSize: "12px",
+                color: darkMode ? "#6b7280" : "#9ca3af",
+                fontWeight: "500"
+              }}>Properties</div>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{
+                fontSize: "24px",
+                fontWeight: "600",
+                color: darkMode ? "#fff" : "#111827",
+                marginBottom: "4px"
+              }}>{userStats?.activeDeals || 0}</div>
+              <div style={{
+                fontSize: "12px",
+                color: darkMode ? "#6b7280" : "#9ca3af",
+                fontWeight: "500"
+              }}>Active Deals</div>
             </div>
           </div>
 
-          {/* Social Media Links Section */}
-          {!isEditing && (profile?.socials?.facebook || profile?.socials?.twitter || profile?.socials?.linkedin || profile?.socials?.instagram || profile?.socials?.youtube) && (
+          {/* Additional Stats Row */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "12px",
+            marginBottom: "24px",
+            paddingBottom: "24px",
+            borderBottom: "1px solid " + (darkMode ? "#252540" : "#f3f4f6")
+          }}>
+            <div style={{ textAlign: "center" }}>
+              <div style={{
+                fontSize: "24px",
+                fontWeight: "600",
+                color: "#10b981",
+                marginBottom: "4px"
+              }}>{userStats?.successfulDeals || 0}</div>
+              <div style={{
+                fontSize: "12px",
+                color: darkMode ? "#6b7280" : "#9ca3af",
+                fontWeight: "500"
+              }}>Completed</div>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{
+                fontSize: "24px",
+                fontWeight: "600",
+                color: "#f59e0b",
+                marginBottom: "4px"
+              }}>{userStats?.rating ? userStats.rating.toFixed(1) : "N/A"}</div>
+              <div style={{
+                fontSize: "12px",
+                color: darkMode ? "#6b7280" : "#9ca3af",
+                fontWeight: "500"
+              }}>Rating</div>
+            </div>
+          </div>
+
+          {/* Contact Info */}
+          <div style={{ marginBottom: "20px" }}>
+            <h3 style={{
+              fontSize: "14px",
+              fontWeight: "600",
+              color: darkMode ? "#fff" : "#111827",
+              marginBottom: "12px"
+            }}>Contact Information</h3>
+
+            <div style={{ marginBottom: "12px" }}>
+              <div style={{
+                fontSize: "11px",
+                color: darkMode ? "#6b7280" : "#9ca3af",
+                marginBottom: "4px",
+                fontWeight: "600",
+                textTransform: "uppercase",
+                letterSpacing: "0.5px"
+              }}>Email</div>
+              <div style={{
+                fontSize: "13px",
+                color: darkMode ? "#d1d5db" : "#4b5563",
+                wordBreak: "break-all"
+              }}>
+                {profile?.email}
+              </div>
+            </div>
+
+            {profile?.phone && (
+              <div style={{ marginBottom: "12px" }}>
+                <div style={{
+                  fontSize: "11px",
+                  color: darkMode ? "#6b7280" : "#9ca3af",
+                  marginBottom: "4px",
+                  fontWeight: "600",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.5px"
+                }}>Phone</div>
+                <div style={{
+                  fontSize: "13px",
+                  color: darkMode ? "#d1d5db" : "#4b5563"
+                }}>
+                  {profile.phone}
+                </div>
+              </div>
+            )}
+
+            {profile?.location && (
+              <div>
+                <div style={{
+                  fontSize: "11px",
+                  color: darkMode ? "#6b7280" : "#9ca3af",
+                  marginBottom: "4px",
+                  fontWeight: "600",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.5px"
+                }}>Location</div>
+                <div style={{
+                  fontSize: "13px",
+                  color: darkMode ? "#d1d5db" : "#4b5563"
+                }}>
+                  {profile.location}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Social Links */}
+          {(profile?.socials?.facebook || profile?.socials?.twitter || profile?.socials?.linkedin || profile?.socials?.instagram || profile?.socials?.youtube) && (
             <div style={{
-              background: darkMode ? "#1e1e2e" : "#f9fafb",
-              borderRadius: "12px",
-              padding: "25px",
-              border: darkMode ? "1px solid #333" : "1px solid #e5e7eb",
-              marginBottom: "30px"
+              paddingTop: "20px",
+              borderTop: "1px solid " + (darkMode ? "#252540" : "#f3f4f6")
             }}>
               <h3 style={{
-                fontSize: "16px",
-                fontWeight: "700",
-                color: darkMode ? "white" : "#1f2937",
-                marginBottom: "20px"
-              }}>
-                🌐 Social Media Links
-              </h3>
-              <div style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))",
-                gap: "15px"
-              }}>
+                fontSize: "14px",
+                fontWeight: "600",
+                color: darkMode ? "#fff" : "#111827",
+                marginBottom: "12px"
+              }}>Social Media</h3>
+              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                 {profile?.socials?.facebook && (
                   <a
                     href={profile.socials.facebook.startsWith("http") ? profile.socials.facebook : `https://facebook.com/${profile.socials.facebook}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{
-                      background: darkMode ? "#2d2d44" : "white",
-                      borderRadius: "10px",
-                      padding: "15px",
-                      border: darkMode ? "1px solid #444" : "1px solid #e5e7eb",
-                      textAlign: "center",
-                      textDecoration: "none",
-                      transition: "all 0.3s ease",
-                      cursor: "pointer",
+                      width: "36px",
+                      height: "36px",
+                      borderRadius: "8px",
+                      background: darkMode ? "#252540" : "#f3f4f6",
+                      border: "1px solid " + (darkMode ? "#333" : "#e5e7eb"),
                       display: "flex",
-                      flexDirection: "column" as const,
                       alignItems: "center",
                       justifyContent: "center",
-                      color: darkMode ? "#a0a0b8" : "#6b7280",
-                      fontSize: "24px"
+                      color: darkMode ? "#d1d5db" : "#6b7280",
+                      fontSize: "16px",
+                      cursor: "pointer",
+                      textDecoration: "none",
+                      transition: "all 0.2s"
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = darkMode ? "#3a3a54" : "#f3f4f6";
-                      e.currentTarget.style.transform = "translateY(-4px)";
+                      e.currentTarget.style.background = darkMode ? "#333" : "#e5e7eb";
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.background = darkMode ? "#2d2d44" : "white";
-                      e.currentTarget.style.transform = "translateY(0)";
+                      e.currentTarget.style.background = darkMode ? "#252540" : "#f3f4f6";
                     }}
-                  >
-                    f
-                    <div style={{ fontSize: "12px", marginTop: "6px", fontWeight: "600" }}>Facebook</div>
-                  </a>
+                  >f</a>
                 )}
                 {profile?.socials?.twitter && (
                   <a
@@ -818,33 +603,27 @@ const Profile = ({ user }: { user: User | null }) => {
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{
-                      background: darkMode ? "#2d2d44" : "white",
-                      borderRadius: "10px",
-                      padding: "15px",
-                      border: darkMode ? "1px solid #444" : "1px solid #e5e7eb",
-                      textAlign: "center",
-                      textDecoration: "none",
-                      transition: "all 0.3s ease",
-                      cursor: "pointer",
+                      width: "36px",
+                      height: "36px",
+                      borderRadius: "8px",
+                      background: darkMode ? "#252540" : "#f3f4f6",
+                      border: "1px solid " + (darkMode ? "#333" : "#e5e7eb"),
                       display: "flex",
-                      flexDirection: "column" as const,
                       alignItems: "center",
                       justifyContent: "center",
-                      color: darkMode ? "#a0a0b8" : "#6b7280",
-                      fontSize: "24px"
+                      color: darkMode ? "#d1d5db" : "#6b7280",
+                      fontSize: "16px",
+                      cursor: "pointer",
+                      textDecoration: "none",
+                      transition: "all 0.2s"
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = darkMode ? "#3a3a54" : "#f3f4f6";
-                      e.currentTarget.style.transform = "translateY(-4px)";
+                      e.currentTarget.style.background = darkMode ? "#333" : "#e5e7eb";
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.background = darkMode ? "#2d2d44" : "white";
-                      e.currentTarget.style.transform = "translateY(0)";
+                      e.currentTarget.style.background = darkMode ? "#252540" : "#f3f4f6";
                     }}
-                  >
-                    𝕏
-                    <div style={{ fontSize: "12px", marginTop: "6px", fontWeight: "600" }}>Twitter</div>
-                  </a>
+                  >𝕏</a>
                 )}
                 {profile?.socials?.linkedin && (
                   <a
@@ -852,33 +631,27 @@ const Profile = ({ user }: { user: User | null }) => {
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{
-                      background: darkMode ? "#2d2d44" : "white",
-                      borderRadius: "10px",
-                      padding: "15px",
-                      border: darkMode ? "1px solid #444" : "1px solid #e5e7eb",
-                      textAlign: "center",
-                      textDecoration: "none",
-                      transition: "all 0.3s ease",
-                      cursor: "pointer",
+                      width: "36px",
+                      height: "36px",
+                      borderRadius: "8px",
+                      background: darkMode ? "#252540" : "#f3f4f6",
+                      border: "1px solid " + (darkMode ? "#333" : "#e5e7eb"),
                       display: "flex",
-                      flexDirection: "column" as const,
                       alignItems: "center",
                       justifyContent: "center",
-                      color: darkMode ? "#a0a0b8" : "#6b7280",
-                      fontSize: "24px"
+                      color: darkMode ? "#d1d5db" : "#6b7280",
+                      fontSize: "16px",
+                      cursor: "pointer",
+                      textDecoration: "none",
+                      transition: "all 0.2s"
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = darkMode ? "#3a3a54" : "#f3f4f6";
-                      e.currentTarget.style.transform = "translateY(-4px)";
+                      e.currentTarget.style.background = darkMode ? "#333" : "#e5e7eb";
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.background = darkMode ? "#2d2d44" : "white";
-                      e.currentTarget.style.transform = "translateY(0)";
+                      e.currentTarget.style.background = darkMode ? "#252540" : "#f3f4f6";
                     }}
-                  >
-                    in
-                    <div style={{ fontSize: "12px", marginTop: "6px", fontWeight: "600" }}>LinkedIn</div>
-                  </a>
+                  >in</a>
                 )}
                 {profile?.socials?.instagram && (
                   <a
@@ -886,33 +659,27 @@ const Profile = ({ user }: { user: User | null }) => {
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{
-                      background: darkMode ? "#2d2d44" : "white",
-                      borderRadius: "10px",
-                      padding: "15px",
-                      border: darkMode ? "1px solid #444" : "1px solid #e5e7eb",
-                      textAlign: "center",
-                      textDecoration: "none",
-                      transition: "all 0.3s ease",
-                      cursor: "pointer",
+                      width: "36px",
+                      height: "36px",
+                      borderRadius: "8px",
+                      background: darkMode ? "#252540" : "#f3f4f6",
+                      border: "1px solid " + (darkMode ? "#333" : "#e5e7eb"),
                       display: "flex",
-                      flexDirection: "column" as const,
                       alignItems: "center",
                       justifyContent: "center",
-                      color: darkMode ? "#a0a0b8" : "#6b7280",
-                      fontSize: "24px"
+                      color: darkMode ? "#d1d5db" : "#6b7280",
+                      fontSize: "16px",
+                      cursor: "pointer",
+                      textDecoration: "none",
+                      transition: "all 0.2s"
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = darkMode ? "#3a3a54" : "#f3f4f6";
-                      e.currentTarget.style.transform = "translateY(-4px)";
+                      e.currentTarget.style.background = darkMode ? "#333" : "#e5e7eb";
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.background = darkMode ? "#2d2d44" : "white";
-                      e.currentTarget.style.transform = "translateY(0)";
+                      e.currentTarget.style.background = darkMode ? "#252540" : "#f3f4f6";
                     }}
-                  >
-                    @
-                    <div style={{ fontSize: "12px", marginTop: "6px", fontWeight: "600" }}>Instagram</div>
-                  </a>
+                  >@</a>
                 )}
                 {profile?.socials?.youtube && (
                   <a
@@ -920,940 +687,723 @@ const Profile = ({ user }: { user: User | null }) => {
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{
-                      background: darkMode ? "#2d2d44" : "white",
-                      borderRadius: "10px",
-                      padding: "15px",
-                      border: darkMode ? "1px solid #444" : "1px solid #e5e7eb",
-                      textAlign: "center",
-                      textDecoration: "none",
-                      transition: "all 0.3s ease",
-                      cursor: "pointer",
+                      width: "36px",
+                      height: "36px",
+                      borderRadius: "8px",
+                      background: darkMode ? "#252540" : "#f3f4f6",
+                      border: "1px solid " + (darkMode ? "#333" : "#e5e7eb"),
                       display: "flex",
-                      flexDirection: "column" as const,
                       alignItems: "center",
                       justifyContent: "center",
-                      color: darkMode ? "#a0a0b8" : "#6b7280",
-                      fontSize: "24px"
+                      color: darkMode ? "#d1d5db" : "#6b7280",
+                      fontSize: "16px",
+                      cursor: "pointer",
+                      textDecoration: "none",
+                      transition: "all 0.2s"
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = darkMode ? "#3a3a54" : "#f3f4f6";
-                      e.currentTarget.style.transform = "translateY(-4px)";
+                      e.currentTarget.style.background = darkMode ? "#333" : "#e5e7eb";
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.background = darkMode ? "#2d2d44" : "white";
-                      e.currentTarget.style.transform = "translateY(0)";
+                      e.currentTarget.style.background = darkMode ? "#252540" : "#f3f4f6";
                     }}
-                  >
-                    ▶
-                    <div style={{ fontSize: "12px", marginTop: "6px", fontWeight: "600" }}>YouTube</div>
-                  </a>
+                  >▶</a>
                 )}
               </div>
             </div>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "40px" }}>
-            {/* Left Column */}
-            <div>
-              {/* Professional Bio */}
-              {isEditing ? (
-                <div style={{ marginBottom: "30px" }}>
-                  <h3 style={{
-                    fontSize: "16px",
-                    fontWeight: "700",
-                    color: darkMode ? "white" : "#1f2937",
-                    marginBottom: "15px"
-                  }}>
-                    Edit Profile Information
-                  </h3>
-                  
-                  <div style={{ marginBottom: "16px" }}>
-                    <label style={{
-                      display: "block",
-                      marginBottom: "6px",
-                      fontWeight: "600",
-                      fontSize: "13px",
-                      color: darkMode ? "#a0a0b8" : "#374151"
-                    }}>Name</label>
-                    <input
-                      type="text"
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      style={{
-                        width: "100%",
-                        padding: "12px",
-                        border: darkMode ? "2px solid #444" : "2px solid #e5e7eb",
-                        borderRadius: "8px",
-                        fontSize: "15px",
-                        background: darkMode ? "#1a1a2e" : "white",
-                        color: darkMode ? "white" : "#1f2937",
-                        boxSizing: "border-box"
-                      }}
-                      placeholder="Enter your name"
-                    />
-                  </div>
+          {/* Edit Profile Button */}
+          <button
+            onClick={() => setIsEditing(!isEditing)}
+            style={{
+              width: "100%",
+              padding: "12px",
+              marginTop: "24px",
+              background: darkMode ? "#667eea" : "#4f46e5",
+              color: "white",
+              border: "none",
+              borderRadius: "8px",
+              cursor: "pointer",
+              fontWeight: "600",
+              fontSize: "14px",
+              transition: "all 0.2s"
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = darkMode ? "#764ba2" : "#4338ca";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = darkMode ? "#667eea" : "#4f46e5";
+            }}
+          >
+            {isEditing ? "Cancel" : "Edit Profile"}
+          </button>
 
-                  <div style={{ marginBottom: "16px" }}>
-                    <label style={{
-                      display: "block",
-                      marginBottom: "6px",
-                      fontWeight: "600",
-                      fontSize: "13px",
-                      color: darkMode ? "#a0a0b8" : "#374151"
-                    }}>Phone (with OTP Verification)</label>
-                    
-                    {showPhoneOTP ? (
-                      <div>
-                        <input
-                          type="tel"
-                          value={tempPhone}
-                          onChange={(e) => setTempPhone(e.target.value)}
-                          disabled={otpSent}
-                          style={{
-                            width: "100%",
-                            padding: "12px",
-                            border: darkMode ? "2px solid #444" : "2px solid #e5e7eb",
-                            borderRadius: "8px",
-                            fontSize: "15px",
-                            background: darkMode ? "#1a1a2e" : "white",
-                            color: darkMode ? "white" : "#1f2937",
-                            boxSizing: "border-box",
-                            marginBottom: "10px",
-                            opacity: otpSent ? 0.6 : 1
-                          }}
-                          placeholder="Enter phone number"
-                        />
-                        
-                        {!otpSent ? (
-                          <button
-                            onClick={sendPhoneOTP}
-                            disabled={otpLoading}
-                            style={{
-                              width: "100%",
-                              padding: "10px",
-                              background: "#667eea",
-                              color: "white",
-                              border: "none",
-                              borderRadius: "6px",
-                              cursor: otpLoading ? "not-allowed" : "pointer",
-                              fontWeight: "600",
-                              fontSize: "13px",
-                              opacity: otpLoading ? 0.6 : 1
-                            }}
-                          >
-                            {otpLoading ? "Sending..." : "📤 Send OTP"}
-                          </button>
-                        ) : (
-                          <>
-                            <input
-                              type="text"
-                              value={phoneOTP}
-                              onChange={(e) => setPhoneOTP(e.target.value)}
-                              style={{
-                                width: "100%",
-                                padding: "12px",
-                                border: darkMode ? "2px solid #444" : "2px solid #e5e7eb",
-                                borderRadius: "8px",
-                                fontSize: "15px",
-                                background: darkMode ? "#1a1a2e" : "white",
-                                color: darkMode ? "white" : "#1f2937",
-                                boxSizing: "border-box",
-                                marginBottom: "10px"
-                              }}
-                              placeholder="Enter OTP"
-                            />
-                            <button
-                              onClick={verifyPhoneOTP}
-                              disabled={otpLoading}
-                              style={{
-                                width: "100%",
-                                padding: "10px",
-                                background: "#22c55e",
-                                color: "white",
-                                border: "none",
-                                borderRadius: "6px",
-                                cursor: otpLoading ? "not-allowed" : "pointer",
-                                fontWeight: "600",
-                                fontSize: "13px",
-                                opacity: otpLoading ? 0.6 : 1
-                              }}
-                            >
-                              {otpLoading ? "Verifying..." : "✓ Verify OTP"}
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    ) : (
-                      <div style={{ display: "flex", gap: "8px" }}>
-                        <input
-                          type="tel"
-                          value={editPhone}
-                          disabled
-                          style={{
-                            width: "100%",
-                            padding: "12px",
-                            border: darkMode ? "2px solid #444" : "2px solid #e5e7eb",
-                            borderRadius: "8px",
-                            fontSize: "15px",
-                            background: darkMode ? "#1a1a2e" : "white",
-                            color: darkMode ? "white" : "#1f2937",
-                            boxSizing: "border-box",
-                            opacity: 0.6
-                          }}
-                          placeholder="Enter your phone number"
-                        />
-                        <button
-                          onClick={() => {
-                            setShowPhoneOTP(true);
-                            setTempPhone(editPhone);
-                          }}
-                          style={{
-                            padding: "12px 16px",
-                            background: "#667eea",
-                            color: "white",
-                            border: "none",
-                            borderRadius: "8px",
-                            cursor: "pointer",
-                            fontWeight: "600",
-                            fontSize: "13px",
-                            whiteSpace: "nowrap"
-                          }}
-                        >
-                          🔒 Verify
-                        </button>
-                      </div>
-                    )}
-                  </div>
+          {/* Logout Button */}
+          <button
+            onClick={() => {
+              signOut(auth);
+              window.location.reload();
+            }}
+            style={{
+              width: "100%",
+              padding: "12px",
+              marginTop: "12px",
+              background: "transparent",
+              color: "#ef4444",
+              border: "1px solid " + (darkMode ? "#333" : "#e5e7eb"),
+              borderRadius: "8px",
+              cursor: "pointer",
+              fontWeight: "600",
+              fontSize: "14px",
+              transition: "all 0.2s"
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = darkMode ? "#252540" : "#fef2f2";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+            }}
+          >
+            Logout
+          </button>
+        </div>
 
-                  <div style={{ marginBottom: "16px" }}>
-                    <label style={{
-                      display: "block",
-                      marginBottom: "6px",
-                      fontWeight: "600",
-                      fontSize: "13px",
-                      color: darkMode ? "#a0a0b8" : "#374151"
-                    }}>Location</label>
-                    <input
-                      type="text"
-                      value={editLocation}
-                      onChange={(e) => setEditLocation(e.target.value)}
-                      style={{
-                        width: "100%",
-                        padding: "12px",
-                        border: darkMode ? "2px solid #444" : "2px solid #e5e7eb",
-                        borderRadius: "8px",
-                        fontSize: "15px",
-                        background: darkMode ? "#1a1a2e" : "white",
-                        color: darkMode ? "white" : "#1f2937",
-                        boxSizing: "border-box"
-                      }}
-                      placeholder="Enter your location"
-                    />
-                  </div>
+        {/* RIGHT CONTENT AREA */}
+        <div style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "20px"
+        }}>
+          {/* Professional Bio Section */}
+          <div style={{
+            background: darkMode ? "#1a1a2e" : "white",
+            borderRadius: "12px",
+            padding: "24px",
+            border: "1px solid " + (darkMode ? "#252540" : "#e5e7eb")
+          }}>
+            <h3 style={{
+              fontSize: "18px",
+              fontWeight: "600",
+              color: darkMode ? "white" : "#000",
+              marginBottom: "16px"
+            }}>
+              Professional Bio
+            </h3>
 
-                  <div style={{ marginBottom: "20px" }}>
-                    <label style={{
-                      display: "block",
-                      marginBottom: "6px",
-                      fontWeight: "600",
-                      fontSize: "13px",
-                      color: darkMode ? "#a0a0b8" : "#374151"
-                    }}>Professional Bio</label>
-                    <textarea
-                      value={editBio}
-                      onChange={(e) => setEditBio(e.target.value)}
-                      style={{
-                        width: "100%",
-                        padding: "12px",
-                        border: darkMode ? "2px solid #444" : "2px solid #e5e7eb",
-                        borderRadius: "8px",
-                        fontSize: "15px",
-                        background: darkMode ? "#1a1a2e" : "white",
-                        color: darkMode ? "white" : "#1f2937",
-                        boxSizing: "border-box",
-                        minHeight: "100px",
-                        fontFamily: "inherit",
-                        resize: "vertical"
-                      }}
-                      placeholder="Tell us about yourself..."
-                    />
-                  </div>
-
-                  <div style={{ marginBottom: "20px" }}>
-                    <label style={{
-                      display: "block",
-                      marginBottom: "12px",
-                      fontWeight: "700",
-                      fontSize: "14px",
-                      color: darkMode ? "#a0a0b8" : "#374151"
-                    }}>Social Media Links</label>
-                    
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                      {/* Facebook */}
-                      <div>
-                        <label style={{
-                          display: "block",
-                          marginBottom: "4px",
-                          fontSize: "12px",
-                          color: darkMode ? "#7a7a9a" : "#6b7280"
-                        }}>f Facebook</label>
-                        <input
-                          type="text"
-                          value={editSocials.facebook}
-                          onChange={(e) => setEditSocials({...editSocials, facebook: e.target.value})}
-                          style={{
-                            width: "100%",
-                            padding: "10px",
-                            border: darkMode ? "2px solid #444" : "2px solid #e5e7eb",
-                            borderRadius: "6px",
-                            fontSize: "14px",
-                            background: darkMode ? "#1a1a2e" : "white",
-                            color: darkMode ? "white" : "#1f2937",
-                            boxSizing: "border-box"
-                          }}
-                          placeholder="facebook.com/yourprofile"
-                        />
-                      </div>
-
-                      {/* Twitter/X */}
-                      <div>
-                        <label style={{
-                          display: "block",
-                          marginBottom: "4px",
-                          fontSize: "12px",
-                          color: darkMode ? "#7a7a9a" : "#6b7280"
-                        }}>𝕏 Twitter</label>
-                        <input
-                          type="text"
-                          value={editSocials.twitter}
-                          onChange={(e) => setEditSocials({...editSocials, twitter: e.target.value})}
-                          style={{
-                            width: "100%",
-                            padding: "10px",
-                            border: darkMode ? "2px solid #444" : "2px solid #e5e7eb",
-                            borderRadius: "6px",
-                            fontSize: "14px",
-                            background: darkMode ? "#1a1a2e" : "white",
-                            color: darkMode ? "white" : "#1f2937",
-                            boxSizing: "border-box"
-                          }}
-                          placeholder="twitter.com/yourhandle"
-                        />
-                      </div>
-
-                      {/* LinkedIn */}
-                      <div>
-                        <label style={{
-                          display: "block",
-                          marginBottom: "4px",
-                          fontSize: "12px",
-                          color: darkMode ? "#7a7a9a" : "#6b7280"
-                        }}>in LinkedIn</label>
-                        <input
-                          type="text"
-                          value={editSocials.linkedin}
-                          onChange={(e) => setEditSocials({...editSocials, linkedin: e.target.value})}
-                          style={{
-                            width: "100%",
-                            padding: "10px",
-                            border: darkMode ? "2px solid #444" : "2px solid #e5e7eb",
-                            borderRadius: "6px",
-                            fontSize: "14px",
-                            background: darkMode ? "#1a1a2e" : "white",
-                            color: darkMode ? "white" : "#1f2937",
-                            boxSizing: "border-box"
-                          }}
-                          placeholder="linkedin.com/in/yourprofile"
-                        />
-                      </div>
-
-                      {/* Instagram */}
-                      <div>
-                        <label style={{
-                          display: "block",
-                          marginBottom: "4px",
-                          fontSize: "12px",
-                          color: darkMode ? "#7a7a9a" : "#6b7280"
-                        }}>@ Instagram</label>
-                        <input
-                          type="text"
-                          value={editSocials.instagram}
-                          onChange={(e) => setEditSocials({...editSocials, instagram: e.target.value})}
-                          style={{
-                            width: "100%",
-                            padding: "10px",
-                            border: darkMode ? "2px solid #444" : "2px solid #e5e7eb",
-                            borderRadius: "6px",
-                            fontSize: "14px",
-                            background: darkMode ? "#1a1a2e" : "white",
-                            color: darkMode ? "white" : "#1f2937",
-                            boxSizing: "border-box"
-                          }}
-                          placeholder="instagram.com/yourprofile"
-                        />
-                      </div>
-
-                      {/* YouTube */}
-                      <div>
-                        <label style={{
-                          display: "block",
-                          marginBottom: "4px",
-                          fontSize: "12px",
-                          color: darkMode ? "#7a7a9a" : "#6b7280"
-                        }}>▶ YouTube</label>
-                        <input
-                          type="text"
-                          value={editSocials.youtube}
-                          onChange={(e) => setEditSocials({...editSocials, youtube: e.target.value})}
-                          style={{
-                            width: "100%",
-                            padding: "10px",
-                            border: darkMode ? "2px solid #444" : "2px solid #e5e7eb",
-                            borderRadius: "6px",
-                            fontSize: "14px",
-                            background: darkMode ? "#1a1a2e" : "white",
-                            color: darkMode ? "white" : "#1f2937",
-                            boxSizing: "border-box"
-                          }}
-                          placeholder="youtube.com/@yourhandle"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={saveProfile}
-                    style={{
-                      padding: "12px 30px",
-                      background: "#22c55e",
-                      color: "white",
-                      border: "none",
-                      borderRadius: "8px",
-                      cursor: "pointer",
-                      fontWeight: "700",
-                      fontSize: "15px",
-                      boxShadow: "0 4px 12px rgba(34, 197, 94, 0.3)"
-                    }}
-                  >
-                    💾 Save Changes
-                  </button>
-                </div>
-              ) : (
-                <div style={{ marginBottom: "30px" }}>
-                  <h3 style={{
-                    fontSize: "16px",
-                    fontWeight: "700",
-                    color: darkMode ? "white" : "#1f2937",
-                    marginBottom: "15px"
-                  }}>
-                    Professional Bio
-                    <span style={{
-                      marginLeft: "10px",
-                      fontSize: "12px",
-                      color: darkMode ? "#a0a0b8" : "#6b7280",
-                      fontWeight: "400"
-                    }}>
-                      Member since 2024
-                    </span>
-                  </h3>
-                  <p style={{
-                    color: darkMode ? "#a0a0b8" : "#4b5563",
-                    fontSize: "14px",
-                    lineHeight: "1.7",
-                    marginBottom: "12px"
-                  }}>
-                    {editBio || "Real estate enthusiast with passion for helping people find their dream properties. Specializing in residential and commercial properties with focus on customer satisfaction and trust."}
-                  </p>
-                  <div style={{
-                    display: "grid",
-                    gridTemplateColumns: "auto 1fr",
-                    gap: "8px 15px",
-                    marginTop: "15px",
-                    fontSize: "13px"
-                  }}>
-                    {profile?.phone && (
-                      <>
-                        <span style={{ color: darkMode ? "#a0a0b8" : "#6b7280" }}>📱 Phone:</span>
-                        <span style={{ color: darkMode ? "white" : "#1f2937", fontWeight: "600" }}>{profile.phone}</span>
-                      </>
-                    )}
-                    <span style={{ color: darkMode ? "#a0a0b8" : "#6b7280" }}>🏢 Company:</span>
-                    <span style={{ color: darkMode ? "white" : "#1f2937", fontWeight: "600" }}>AuraSpot Platform</span>
-                  </div>
-                </div>
-              )}
-
-              {/* My Achievements */}
-              <div>
-                <h3 style={{
-                  fontSize: "16px",
-                  fontWeight: "700",
-                  color: darkMode ? "white" : "#1f2937",
-                  marginBottom: "20px"
-                }}>
-                  My Achievements (4)
-                </h3>
-                <div style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))",
-                  gap: "20px"
-                }}>
-                  {[
-                    { icon: "🏆", color: "#ff6b35", title: "Top Seller" },
-                    { icon: "⭐", color: "#fbbf24", title: "5-Star Rated" },
-                    { icon: "🎯", color: "#667eea", title: "Deal Maker" },
-                    { icon: "💎", color: "#764ba2", title: "Premium User" }
-                  ].map((badge, idx) => (
-                    <div key={idx} style={{
-                      textAlign: "center",
-                      padding: "20px 10px",
-                      background: darkMode ? "#3d3d5c" : "#f9fafb",
-                      borderRadius: "12px",
-                      transition: "transform 0.2s",
-                      cursor: "pointer"
-                    }}
-                      onMouseOver={(e) => e.currentTarget.style.transform = "translateY(-5px)"}
-                      onMouseOut={(e) => e.currentTarget.style.transform = "translateY(0)"}
-                    >
-                      <div style={{
-                        width: "60px",
-                        height: "60px",
-                        margin: "0 auto 10px",
-                        borderRadius: "50%",
-                        background: badge.color,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: "28px",
-                        boxShadow: `0 4px 12px ${badge.color}40`
-                      }}>
-                        {badge.icon}
-                      </div>
-                      <div style={{
-                        fontSize: "11px",
-                        color: darkMode ? "#a0a0b8" : "#6b7280",
-                        fontWeight: "600"
-                      }}>
-                        {badge.title}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Right Column */}
-            <div>
-              <h3 style={{
-                fontSize: "16px",
-                fontWeight: "700",
-                color: darkMode ? "white" : "#1f2937",
-                marginBottom: "15px"
-              }}>
-                Quick Actions
-              </h3>
-              
-              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                <Link to="/my-deals" style={{ textDecoration: "none" }}>
-                  <div style={{
-                    background: darkMode ? "#3d3d5c" : "#f9fafb",
-                    padding: "15px 20px",
-                    borderRadius: "10px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "12px",
-                    cursor: "pointer",
-                    transition: "all 0.2s",
-                    border: darkMode ? "1px solid #555" : "1px solid #e5e7eb"
-                  }}
-                    onMouseOver={(e) => {
-                      e.currentTarget.style.background = darkMode ? "#4d4d6c" : "#667eea";
-                      e.currentTarget.style.transform = "translateX(5px)";
-                      const textEl = e.currentTarget.querySelector("span") as HTMLElement;
-                      if (textEl) textEl.style.color = "white";
-                    }}
-                    onMouseOut={(e) => {
-                      e.currentTarget.style.background = darkMode ? "#3d3d5c" : "#f9fafb";
-                      e.currentTarget.style.transform = "translateX(0)";
-                      const textEl = e.currentTarget.querySelector("span") as HTMLElement;
-                      if (textEl) textEl.style.color = darkMode ? "white" : "#374151";
-                    }}
-                  >
-                    <div style={{ fontSize: "24px" }}>💼</div>
-                    <span style={{
-                      fontWeight: "600",
-                      fontSize: "14px",
-                      color: darkMode ? "white" : "#374151"
-                    }}>My Deals</span>
-                  </div>
-                </Link>
-
-                <Link to="/notifications" style={{ textDecoration: "none" }}>
-                  <div style={{
-                    background: darkMode ? "#3d3d5c" : "#f9fafb",
-                    padding: "15px 20px",
-                    borderRadius: "10px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "12px",
-                    cursor: "pointer",
-                    transition: "all 0.2s",
-                    border: darkMode ? "1px solid #555" : "1px solid #e5e7eb"
-                  }}
-                    onMouseOver={(e) => {
-                      e.currentTarget.style.background = darkMode ? "#4d4d6c" : "#667eea";
-                      e.currentTarget.style.transform = "translateX(5px)";
-                      const textEl = e.currentTarget.querySelector("span") as HTMLElement;
-                      if (textEl) textEl.style.color = "white";
-                    }}
-                    onMouseOut={(e) => {
-                      e.currentTarget.style.background = darkMode ? "#3d3d5c" : "#f9fafb";
-                      e.currentTarget.style.transform = "translateX(0)";
-                      const textEl = e.currentTarget.querySelector("span") as HTMLElement;
-                      if (textEl) textEl.style.color = darkMode ? "white" : "#374151";
-                    }}
-                  >
-                    <div style={{ fontSize: "24px" }}>🔔</div>
-                    <span style={{
-                      fontWeight: "600",
-                      fontSize: "14px",
-                      color: darkMode ? "white" : "#374151"
-                    }}>Notifications</span>
-                  </div>
-                </Link>
-
-                <Link to="/add" style={{ textDecoration: "none" }}>
-                  <div style={{
-                    background: darkMode ? "#3d3d5c" : "#f9fafb",
-                    padding: "15px 20px",
-                    borderRadius: "10px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "12px",
-                    cursor: "pointer",
-                    transition: "all 0.2s",
-                    border: darkMode ? "1px solid #555" : "1px solid #e5e7eb"
-                  }}
-                    onMouseOver={(e) => {
-                      e.currentTarget.style.background = darkMode ? "#4d4d6c" : "#667eea";
-                      e.currentTarget.style.transform = "translateX(5px)";
-                      const textEl = e.currentTarget.querySelector("span") as HTMLElement;
-                      if (textEl) textEl.style.color = "white";
-                    }}
-                    onMouseOut={(e) => {
-                      e.currentTarget.style.background = darkMode ? "#3d3d5c" : "#f9fafb";
-                      e.currentTarget.style.transform = "translateX(0)";
-                      const textEl = e.currentTarget.querySelector("span") as HTMLElement;
-                      if (textEl) textEl.style.color = darkMode ? "white" : "#374151";
-                    }}
-                  >
-                    <div style={{ fontSize: "24px" }}>➕</div>
-                    <span style={{
-                      fontWeight: "600",
-                      fontSize: "14px",
-                      color: darkMode ? "white" : "#374151"
-                    }}>Add Property</span>
-                  </div>
-                </Link>
-
-                <Link to="/explore" style={{ textDecoration: "none" }}>
-                  <div style={{
-                    background: darkMode ? "#3d3d5c" : "#f9fafb",
-                    padding: "15px 20px",
-                    borderRadius: "10px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "12px",
-                    cursor: "pointer",
-                    transition: "all 0.2s",
-                    border: darkMode ? "1px solid #555" : "1px solid #e5e7eb"
-                  }}
-                    onMouseOver={(e) => {
-                      e.currentTarget.style.background = darkMode ? "#4d4d6c" : "#667eea";
-                      e.currentTarget.style.transform = "translateX(5px)";
-                      const textEl = e.currentTarget.querySelector("span") as HTMLElement;
-                      if (textEl) textEl.style.color = "white";
-                    }}
-                    onMouseOut={(e) => {
-                      e.currentTarget.style.background = darkMode ? "#3d3d5c" : "#f9fafb";
-                      e.currentTarget.style.transform = "translateX(0)";
-                      const textEl = e.currentTarget.querySelector("span") as HTMLElement;
-                      if (textEl) textEl.style.color = darkMode ? "white" : "#374151";
-                    }}
-                  >
-                    <div style={{ fontSize: "24px" }}>🔍</div>
-                    <span style={{
-                      fontWeight: "600",
-                      fontSize: "14px",
-                      color: darkMode ? "white" : "#374151"
-                    }}>Explore Properties</span>
-                  </div>
-                </Link>
-              </div>
-
-              {/* Verification Section */}
-              {profile?.verified ? (
-                <div style={{
-                  marginTop: "25px",
-                  background: "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)",
-                  borderRadius: "12px",
-                  padding: "25px",
-                  color: "white",
-                  boxShadow: "0 8px 24px rgba(34, 197, 94, 0.3)"
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "15px", marginBottom: "15px" }}>
-                    <div style={{
-                      fontSize: "40px",
-                      background: "rgba(255,255,255,0.2)",
-                      width: "60px",
-                      height: "60px",
-                      borderRadius: "50%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center"
-                    }}>
-                      ✓
-                    </div>
-                    <div>
-                      <h3 style={{ margin: "0 0 4px 0", fontSize: "18px", fontWeight: "700" }}>
-                        Account Verified
-                      </h3>
-                      <p style={{ margin: 0, fontSize: "13px", opacity: 0.95 }}>
-                        Your identity has been verified
-                      </p>
-                    </div>
-                  </div>
-                  <div style={{
-                    background: "rgba(255,255,255,0.1)",
-                    borderRadius: "8px",
-                    padding: "12px",
+            {isEditing ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                <div>
+                  <label style={{
+                    display: "block",
                     fontSize: "12px",
-                    marginBottom: "12px"
+                    fontWeight: "600",
+                    color: darkMode ? "#9ca3af" : "#6b7280",
+                    marginBottom: "8px",
+                    textTransform: "uppercase"
                   }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
-                      <span>Verification Type:</span>
-                      <span style={{ fontWeight: "600" }}>
-                        {profile?.verificationDocuments?.[0]?.type === "AADHAR" ? "Aadhar Card" :
-                         profile?.verificationDocuments?.[0]?.type === "PAN" ? "PAN Card" :
-                         profile?.verificationDocuments?.[0]?.type === "DRIVING_LICENSE" ? "Driving License" :
-                         "Passport"}
-                      </span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span>Verified On:</span>
-                      <span style={{ fontWeight: "600" }}>
-                        {profile?.verificationDocuments?.[0]?.uploadedAt ? 
-                          new Date(profile.verificationDocuments[0].uploadedAt).toLocaleDateString() :
-                          "N/A"
-                        }
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    style={{
-                      width: "100%",
-                      padding: "10px",
-                      background: "rgba(255,255,255,0.25)",
-                      color: "white",
-                      border: "1px solid rgba(255,255,255,0.4)",
-                      borderRadius: "8px",
-                      cursor: "pointer",
-                      fontWeight: "600",
-                      fontSize: "13px",
-                      transition: "all 0.2s"
-                    }}
-                    onMouseOver={(e) => {
-                      e.currentTarget.style.background = "rgba(255,255,255,0.35)";
-                    }}
-                    onMouseOut={(e) => {
-                      e.currentTarget.style.background = "rgba(255,255,255,0.25)";
-                    }}
-                  >
-                    🎖️ View Verification Details
-                  </button>
-                </div>
-              ) : (
-                <div style={{
-                  marginTop: "25px",
-                  background: "linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)",
-                  borderRadius: "12px",
-                  padding: "25px",
-                  color: "white",
-                  boxShadow: "0 8px 24px rgba(251, 191, 36, 0.3)"
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "15px", marginBottom: "15px" }}>
-                    <div style={{
-                      fontSize: "32px",
-                      background: "rgba(255,255,255,0.2)",
-                      width: "60px",
-                      height: "60px",
-                      borderRadius: "50%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center"
-                    }}>
-                      🔒
-                    </div>
-                    <div>
-                      <h3 style={{ margin: "0 0 4px 0", fontSize: "18px", fontWeight: "700" }}>
-                        Get Verified
-                      </h3>
-                      <p style={{ margin: 0, fontSize: "13px", opacity: 0.95 }}>
-                        Build trust and unlock premium features
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setShowVerification(!showVerification)}
+                    Name
+                  </label>
+                  <input
+                    type="text"
+                    value={editForm.name}
+                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
                     style={{
                       width: "100%",
                       padding: "12px",
-                      background: "white",
-                      color: "#f59e0b",
-                      border: "none",
+                      background: darkMode ? "#252540" : "#f9fafb",
+                      color: darkMode ? "white" : "#000",
+                      border: "1px solid " + (darkMode ? "#333" : "#e5e7eb"),
                       borderRadius: "8px",
-                      cursor: "pointer",
-                      fontWeight: "700",
-                      fontSize: "14px",
-                      marginBottom: "10px",
-                      transition: "all 0.2s"
+                      fontSize: "14px"
                     }}
-                    onMouseOver={(e) => {
-                      e.currentTarget.style.transform = "translateY(-2px)";
-                      e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.15)";
-                    }}
-                    onMouseOut={(e) => {
-                      e.currentTarget.style.transform = "translateY(0)";
-                      e.currentTarget.style.boxShadow = "none";
-                    }}
-                  >
-                    {showVerification ? "Cancel Verification" : "✓ Start Verification"}
-                  </button>
+                    placeholder="Your name"
+                  />
+                </div>
 
-                  {showVerification && (
-                    <div style={{
-                      marginTop: "15px",
-                      background: "rgba(255,255,255,0.15)",
-                      padding: "20px",
-                      borderRadius: "12px",
-                      backdropFilter: "blur(10px)"
+                <div>
+                  <label style={{
+                    display: "block",
+                    fontSize: "12px",
+                    fontWeight: "600",
+                    color: darkMode ? "#9ca3af" : "#6b7280",
+                    marginBottom: "8px",
+                    textTransform: "uppercase"
+                  }}>
+                    Location
+                  </label>
+                  <input
+                    type="text"
+                    value={editForm.location}
+                    onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
+                    style={{
+                      width: "100%",
+                      padding: "12px",
+                      background: darkMode ? "#252540" : "#f9fafb",
+                      color: darkMode ? "white" : "#000",
+                      border: "1px solid " + (darkMode ? "#333" : "#e5e7eb"),
+                      borderRadius: "8px",
+                      fontSize: "14px"
+                    }}
+                    placeholder="City, Country"
+                  />
+                </div>
+
+                <div>
+                  <label style={{
+                    display: "block",
+                    fontSize: "12px",
+                    fontWeight: "600",
+                    color: darkMode ? "#9ca3af" : "#6b7280",
+                    marginBottom: "8px",
+                    textTransform: "uppercase"
+                  }}>
+                    Bio
+                  </label>
+                  <textarea
+                    value={editForm.bio}
+                    onChange={(e) => setEditForm({ ...editForm, bio: e.target.value })}
+                    rows={4}
+                    style={{
+                      width: "100%",
+                      padding: "12px",
+                      background: darkMode ? "#252540" : "#f9fafb",
+                      color: darkMode ? "white" : "#000",
+                      border: "1px solid " + (darkMode ? "#333" : "#e5e7eb"),
+                      borderRadius: "8px",
+                      fontSize: "14px",
+                      resize: "vertical"
+                    }}
+                    placeholder="Tell us about yourself..."
+                  />
+                </div>
+
+                <div>
+                  <label style={{
+                    display: "block",
+                    fontSize: "12px",
+                    fontWeight: "600",
+                    color: darkMode ? "#9ca3af" : "#6b7280",
+                    marginBottom: "8px",
+                    textTransform: "uppercase"
+                  }}>
+                    Phone Number
+                  </label>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <input
+                      type="tel"
+                      value={editForm.phone}
+                      onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                      style={{
+                        flex: 1,
+                        padding: "12px",
+                        background: darkMode ? "#252540" : "#f9fafb",
+                        color: darkMode ? "white" : "#000",
+                        border: "1px solid " + (darkMode ? "#333" : "#e5e7eb"),
+                        borderRadius: "8px",
+                        fontSize: "14px"
+                      }}
+                      placeholder="+1234567890"
+                    />
+                    <button
+                      onClick={sendPhoneOTP}
+                      disabled={!editForm.phone || otpSent}
+                      style={{
+                        padding: "12px 20px",
+                        background: darkMode ? "#667eea" : "#4f46e5",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "8px",
+                        fontWeight: "600",
+                        fontSize: "14px",
+                        cursor: editForm.phone && !otpSent ? "pointer" : "not-allowed",
+                        opacity: editForm.phone && !otpSent ? 1 : 0.5,
+                        whiteSpace: "nowrap"
+                      }}
+                    >
+                      {otpSent ? "Sent" : "Send OTP"}
+                    </button>
+                  </div>
+                </div>
+
+                {otpSent && (
+                  <div>
+                    <label style={{
+                      display: "block",
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      color: darkMode ? "#9ca3af" : "#6b7280",
+                      marginBottom: "8px",
+                      textTransform: "uppercase"
                     }}>
-                      <div style={{ marginBottom: "15px" }}>
-                        <label style={{
-                          display: "block",
-                          marginBottom: "8px",
-                          fontWeight: "600",
-                          fontSize: "13px"
-                        }}>
-                          Document Type
-                        </label>
-                        <select
-                          value={documentType}
-                          onChange={(e) => setDocumentType(e.target.value)}
-                          style={{
-                            width: "100%",
-                            padding: "12px",
-                            border: "none",
-                            borderRadius: "8px",
-                            fontSize: "14px",
-                            background: "white",
-                            color: "#374151",
-                            fontWeight: "500",
-                            boxSizing: "border-box"
-                          }}
-                        >
-                          <option value="AADHAR">🪳 Aadhar Card</option>
-                          <option value="PAN">📋 PAN Card</option>
-                          <option value="DRIVING_LICENSE">🚗 Driving License</option>
-                          <option value="PASSPORT">🛂 Passport</option>
-                        </select>
-                      </div>
-                      
-                      <div style={{ marginBottom: "15px" }}>
-                        <label style={{
-                          display: "block",
-                          marginBottom: "8px",
-                          fontWeight: "600",
-                          fontSize: "13px"
-                        }}>
-                          Document Number
-                        </label>
-                        <input
-                          type="text"
-                          value={documentNumber}
-                          onChange={(e) => setDocumentNumber(e.target.value)}
-                          style={{
-                            width: "100%",
-                            padding: "12px",
-                            border: "none",
-                            borderRadius: "8px",
-                            fontSize: "14px",
-                            background: "white",
-                            color: "#374151",
-                            boxSizing: "border-box"
-                          }}
-                          placeholder="Enter your document number"
-                        />
-                      </div>
-                      
-                      <button
-                        onClick={submitVerification}
-                        disabled={verifying}
+                      Enter OTP
+                    </label>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <input
+                        type="text"
+                        value={otp}
+                        onChange={(e) => setOtp(e.target.value)}
                         style={{
-                          width: "100%",
+                          flex: 1,
                           padding: "12px",
-                          background: "#22c55e",
+                          background: darkMode ? "#252540" : "#f9fafb",
+                          color: darkMode ? "white" : "#000",
+                          border: "1px solid " + (darkMode ? "#333" : "#e5e7eb"),
+                          borderRadius: "8px",
+                          fontSize: "14px"
+                        }}
+                        placeholder="Enter 6-digit OTP"
+                      />
+                      <button
+                        onClick={verifyPhoneOTP}
+                        disabled={!otp}
+                        style={{
+                          padding: "12px 20px",
+                          background: "#10b981",
                           color: "white",
                           border: "none",
                           borderRadius: "8px",
-                          cursor: verifying ? "not-allowed" : "pointer",
-                          fontWeight: "700",
+                          fontWeight: "600",
                           fontSize: "14px",
-                          opacity: verifying ? 0.6 : 1,
-                          transition: "all 0.2s"
-                        }}
-                        onMouseOver={(e) => {
-                          if (!verifying) {
-                            e.currentTarget.style.background = "#16a34a";
-                            e.currentTarget.style.transform = "translateY(-2px)";
-                          }
-                        }}
-                        onMouseOut={(e) => {
-                          e.currentTarget.style.background = "#22c55e";
-                          e.currentTarget.style.transform = "translateY(0)";
+                          cursor: otp ? "pointer" : "not-allowed",
+                          opacity: otp ? 1 : 0.5
                         }}
                       >
-                        {verifying ? "⏳ Verifying..." : "✓ Submit Verification"}
+                        Verify
                       </button>
                     </div>
-                  )}
-                </div>
-              )}
+                  </div>
+                )}
 
-              {/* Logout */}
-              <button
-                onClick={logout}
-                style={{
-                  width: "100%",
-                  marginTop: "20px",
-                  padding: "14px",
-                  background: darkMode ? "#dc2626" : "#ef4444",
-                  border: "none",
-                  borderRadius: "10px",
-                  cursor: "pointer",
-                  color: "white",
-                  fontWeight: "700",
+                {/* Social Media Links */}
+                <div>
+                  <h4 style={{
+                    fontSize: "14px",
+                    fontWeight: "600",
+                    color: darkMode ? "white" : "#000",
+                    marginBottom: "12px"
+                  }}>
+                    Social Media Links
+                  </h4>
+
+                  {["facebook", "twitter", "linkedin", "instagram", "youtube"].map((platform) => (
+                    <div key={platform} style={{ marginBottom: "12px" }}>
+                      <label style={{
+                        display: "block",
+                        fontSize: "12px",
+                        fontWeight: "600",
+                        color: darkMode ? "#9ca3af" : "#6b7280",
+                        marginBottom: "6px",
+                        textTransform: "capitalize"
+                      }}>
+                        {platform}
+                      </label>
+                      <input
+                        type="text"
+                        value={(editForm.socials as any)[platform] || ""}
+                        onChange={(e) => setEditForm({
+                          ...editForm,
+                          socials: {
+                            ...editForm.socials,
+                            [platform as keyof typeof editForm.socials]: e.target.value
+                          }
+                        })}
+                        style={{
+                          width: "100%",
+                          padding: "10px",
+                          background: darkMode ? "#252540" : "#f9fafb",
+                          color: darkMode ? "white" : "#000",
+                          border: "1px solid " + (darkMode ? "#333" : "#e5e7eb"),
+                          borderRadius: "6px",
+                          fontSize: "13px"
+                        }}
+                        placeholder={`Your ${platform} username or URL`}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                {/* Save Changes Button */}
+                <button
+                  onClick={saveProfile}
+                  style={{
+                    padding: "14px",
+                    background: darkMode ? "#667eea" : "#4f46e5",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "8px",
+                    fontWeight: "600",
+                    fontSize: "14px",
+                    cursor: "pointer",
+                    marginTop: "8px"
+                  }}
+                >
+                  Save Changes
+                </button>
+              </div>
+            ) : (
+              <div>
+                <p style={{
                   fontSize: "14px",
-                  boxShadow: "0 4px 12px rgba(239, 68, 68, 0.3)",
-                  transition: "transform 0.2s"
-                }}
-                onMouseOver={(e) => e.currentTarget.style.transform = "translateY(-2px)"}
-                onMouseOut={(e) => e.currentTarget.style.transform = "translateY(0)"}
-              >
-                🚪 Logout
-              </button>
+                  lineHeight: "1.6",
+                  color: darkMode ? "#d1d5db" : "#4b5563",
+                  marginBottom: "16px"
+                }}>
+                  {profile?.bio || "No bio added yet. Click 'Edit Profile' to add your professional bio."}
+                </p>
+
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, 1fr)",
+                  gap: "16px",
+                  marginTop: "16px"
+                }}>
+                  <div>
+                    <div style={{
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      color: darkMode ? "#9ca3af" : "#6b7280",
+                      marginBottom: "4px",
+                      textTransform: "uppercase"
+                    }}>
+                      Member Since
+                    </div>
+                    <div style={{
+                      fontSize: "14px",
+                      color: darkMode ? "white" : "#000"
+                    }}>
+                      2024
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      color: darkMode ? "#9ca3af" : "#6b7280",
+                      marginBottom: "4px",
+                      textTransform: "uppercase"
+                    }}>
+                      Phone
+                    </div>
+                    <div style={{
+                      fontSize: "14px",
+                      color: darkMode ? "white" : "#000"
+                    }}>
+                      {profile?.phone || "Not provided"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* My Core Skills Section */}
+          <div style={{
+            background: darkMode ? "#1a1a2e" : "white",
+            borderRadius: "12px",
+            padding: "24px",
+            border: "1px solid " + (darkMode ? "#252540" : "#e5e7eb")
+          }}>
+            <h3 style={{
+              fontSize: "18px",
+              fontWeight: "600",
+              color: darkMode ? "white" : "#000",
+              marginBottom: "16px"
+            }}>
+              My Core Skills
+            </h3>
+
+            <div style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "12px"
+            }}>
+              {["Property Analysis", "Negotiation", "Market Research", "Client Relations", "Investment Strategy"].map((skill, index) => (
+                <div
+                  key={index}
+                  style={{
+                    padding: "8px 16px",
+                    background: index === 0 ? (darkMode ? "#667eea" : "#4f46e5") : (darkMode ? "#252540" : "#f3f4f6"),
+                    color: index === 0 ? "white" : (darkMode ? "#d1d5db" : "#4b5563"),
+                    borderRadius: "8px",
+                    fontSize: "13px",
+                    fontWeight: "500",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px"
+                  }}
+                >
+                  {skill}
+                  {index === 0 && <span>⭐</span>}
+                </div>
+              ))}
             </div>
           </div>
+
+          {/* My Achievements Section */}
+          <div style={{
+            background: darkMode ? "#1a1a2e" : "white",
+            borderRadius: "12px",
+            padding: "24px",
+            border: "1px solid " + (darkMode ? "#252540" : "#e5e7eb")
+          }}>
+            <h3 style={{
+              fontSize: "18px",
+              fontWeight: "600",
+              color: darkMode ? "white" : "#000",
+              marginBottom: "16px"
+            }}>
+              My Achievements
+            </h3>
+
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+              gap: "16px"
+            }}>
+              {[
+                { icon: "🏆", label: "Top Seller", color: "#f59e0b" },
+                { icon: "⭐", label: "5-Star Rated", color: "#10b981" },
+                { icon: "💼", label: "Deal Maker", color: "#3b82f6" },
+                { icon: "👑", label: "Premium User", color: "#8b5cf6" }
+              ].map((achievement, index) => (
+                <div
+                  key={index}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "16px",
+                    background: darkMode ? "#252540" : "#f9fafb",
+                    borderRadius: "12px",
+                    textAlign: "center"
+                  }}
+                >
+                  <div style={{
+                    width: "48px",
+                    height: "48px",
+                    borderRadius: "50%",
+                    background: achievement.color + "20",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "24px"
+                  }}>
+                    {achievement.icon}
+                  </div>
+                  <div style={{
+                    fontSize: "13px",
+                    fontWeight: "600",
+                    color: darkMode ? "white" : "#000"
+                  }}>
+                    {achievement.label}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Get Verified Section */}
+          {!profile?.verified && !isEditing && !showVerification && (
+            <div style={{
+              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+              borderRadius: "12px",
+              padding: "24px",
+              textAlign: "center"
+            }}>
+              <div style={{
+                fontSize: "32px",
+                marginBottom: "12px"
+              }}>
+                ✓
+              </div>
+              <h3 style={{
+                fontSize: "18px",
+                fontWeight: "600",
+                color: "white",
+                marginBottom: "8px"
+              }}>
+                Get Verified
+              </h3>
+              <p style={{
+                fontSize: "14px",
+                color: "rgba(255,255,255,0.9)",
+                marginBottom: "16px"
+              }}>
+                Increase your credibility and get more deals
+              </p>
+              <button
+                onClick={() => setShowVerification(true)}
+                style={{
+                  padding: "10px 24px",
+                  background: "white",
+                  color: "#667eea",
+                  border: "none",
+                  borderRadius: "8px",
+                  fontWeight: "600",
+                  fontSize: "14px",
+                  cursor: "pointer"
+                }}
+              >
+                Start Verification
+              </button>
+            </div>
+          )}
+
+          {/* Verification Modal */}
+          {showVerification && !isEditing && (
+            <div style={{
+              background: darkMode ? "#2a2a2a" : "#f5f5f5",
+              borderRadius: "12px",
+              padding: "24px",
+              border: darkMode ? "1px solid #444" : "1px solid #ddd"
+            }}>
+              <div style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "20px"
+              }}>
+                <h3 style={{
+                  fontSize: "18px",
+                  fontWeight: "600",
+                  color: darkMode ? "white" : "#333",
+                  margin: 0
+                }}>
+                  Document Verification
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowVerification(false);
+                    setDocumentNumber("");
+                  }}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    fontSize: "24px",
+                    cursor: "pointer",
+                    color: darkMode ? "#aaa" : "#666"
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div style={{ marginBottom: "16px" }}>
+                <label style={{
+                  display: "block",
+                  fontSize: "14px",
+                  fontWeight: "500",
+                  color: darkMode ? "#bbb" : "#666",
+                  marginBottom: "8px"
+                }}>
+                  Document Type
+                </label>
+                <select
+                  value={documentType}
+                  onChange={(e) => setDocumentType(e.target.value)}
+                  disabled={verifying}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    border: darkMode ? "1px solid #444" : "1px solid #ddd",
+                    borderRadius: "8px",
+                    fontSize: "14px",
+                    background: darkMode ? "#333" : "white",
+                    color: darkMode ? "white" : "#333",
+                    cursor: verifying ? "not-allowed" : "pointer"
+                  }}
+                >
+                  <option value="AADHAR">Aadhar (National ID)</option>
+                  <option value="PAN">PAN Card</option>
+                  <option value="DRIVING_LICENSE">Driving License</option>
+                  <option value="PASSPORT">Passport</option>
+                </select>
+              </div>
+
+              <div style={{ marginBottom: "20px" }}>
+                <label style={{
+                  display: "block",
+                  fontSize: "14px",
+                  fontWeight: "500",
+                  color: darkMode ? "#bbb" : "#666",
+                  marginBottom: "8px"
+                }}>
+                  Document Number
+                </label>
+                <input
+                  type="text"
+                  value={documentNumber}
+                  onChange={(e) => setDocumentNumber(e.target.value)}
+                  disabled={verifying}
+                  placeholder={`Enter your ${documentType.toLowerCase().replace("_", " ")} number`}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    border: darkMode ? "1px solid #444" : "1px solid #ddd",
+                    borderRadius: "8px",
+                    fontSize: "14px",
+                    background: darkMode ? "#333" : "white",
+                    color: darkMode ? "white" : "#333",
+                    boxSizing: "border-box"
+                  }}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: "12px" }}>
+                <button
+                  onClick={() => {
+                    setShowVerification(false);
+                    setDocumentNumber("");
+                  }}
+                  disabled={verifying}
+                  style={{
+                    flex: 1,
+                    padding: "10px 16px",
+                    border: darkMode ? "1px solid #444" : "1px solid #ddd",
+                    background: darkMode ? "#333" : "#f5f5f5",
+                    color: darkMode ? "#bbb" : "#666",
+                    borderRadius: "8px",
+                    fontWeight: "600",
+                    fontSize: "14px",
+                    cursor: verifying ? "not-allowed" : "pointer",
+                    opacity: verifying ? 0.6 : 1
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={submitVerification}
+                  disabled={verifying || !documentNumber.trim()}
+                  style={{
+                    flex: 1,
+                    padding: "10px 16px",
+                    background: "#667eea",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "8px",
+                    fontWeight: "600",
+                    fontSize: "14px",
+                    cursor: verifying || !documentNumber.trim() ? "not-allowed" : "pointer",
+                    opacity: verifying || !documentNumber.trim() ? 0.6 : 1
+                  }}
+                >
+                  {verifying ? "Verifying..." : "Submit Verification"}
+                </button>
+              </div>
+
+              <p style={{
+                fontSize: "12px",
+                color: darkMode ? "#888" : "#999",
+                marginTop: "12px",
+                marginBottom: 0
+              }}>
+                Your document will be reviewed within 24 hours.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1861,4 +1411,5 @@ const Profile = ({ user }: { user: User | null }) => {
 };
 
 export default Profile;
+
 

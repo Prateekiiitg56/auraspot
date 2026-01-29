@@ -2,9 +2,25 @@ import { useState } from "react";
 import { API } from "../services/api";
 import { auth } from "../services/firebase";
 import { useNavigate } from "react-router-dom";
+import MapPicker from "../components/MapPicker";
 
 const AddProperty = () => {
   const navigate = useNavigate();
+
+  // Shared input styling
+  const inputStyle = {
+    width: "100%",
+    padding: "12px 14px",
+    background: "#1a1a1a",
+    border: "1px solid #404040",
+    borderRadius: "8px",
+    color: "#ffffff",
+    fontSize: "14px",
+    outline: "none",
+    transition: "all 0.2s ease",
+    boxSizing: "border-box" as const,
+    fontFamily: "inherit"
+  };
 
   const [form, setForm] = useState({
     title: "",
@@ -38,6 +54,26 @@ const AddProperty = () => {
 
     if (!form.type || !form.purpose) {
       alert("Select property type and purpose");
+      return;
+    }
+
+    if (!form.title.trim()) {
+      alert("Please enter property title");
+      return;
+    }
+
+    if (!form.city.trim() || !form.area.trim()) {
+      alert("Please enter city and area");
+      return;
+    }
+
+    if (!form.latitude || !form.longitude) {
+      alert("Please select location on the map");
+      return;
+    }
+
+    if (!form.price) {
+      alert("Please enter property price");
       return;
     }
 
@@ -84,53 +120,67 @@ const AddProperty = () => {
   };
 
   return (
-    <div className="page">
-      {/* Page Header */}
+    <div className="page" style={{
+      minHeight: "100vh",
+      padding: "40px 20px",
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "flex-start"
+    }}>
       <div style={{
-        marginBottom: "48px",
-        paddingBottom: "32px",
-        borderBottom: "1px solid rgba(226, 232, 240, 0.1)"
+        width: "100%",
+        maxWidth: "700px"
       }}>
-        <h1 style={{
-          fontSize: "40px",
-          marginBottom: "8px"
+        {/* Page Header */}
+        <div style={{
+          marginBottom: "40px",
+          paddingBottom: "24px",
+          borderBottom: "2px solid rgba(99, 102, 241, 0.3)"
         }}>
-          🏠 Add Property
-        </h1>
-        <p style={{ color: "#94a3b8", fontSize: "16px" }}>
-          List your property and reach potential buyers or renters
-        </p>
-      </div>
+          <h1 style={{
+            fontSize: "32px",
+            marginBottom: "8px",
+            fontWeight: "700",
+            color: "#ffffff"
+          }}>
+            🏠 Add Property
+          </h1>
+          <p style={{ color: "#888888", fontSize: "14px", margin: "0" }}>
+            List your property and reach potential buyers or renters
+          </p>
+        </div>
 
-      {/* Form Container */}
-      <div style={{
-        maxWidth: "600px",
-        background: "linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(45, 55, 72, 0.8) 100%)",
-        border: "1px solid rgba(102, 126, 234, 0.2)",
-        borderRadius: "16px",
-        padding: "40px",
-        backdropFilter: "blur(8px)"
-      }}>
+        {/* Form Container */}
+        <div style={{
+          background: "linear-gradient(135deg, #2a2a2a 0%, #1f1f1f 100%)",
+          border: "1px solid rgba(99, 102, 241, 0.3)",
+          borderRadius: "12px",
+          padding: "40px",
+          boxShadow: "0 8px 32px rgba(0, 0, 0, 0.5)"
+        }}>
         {/* Title */}
         <div style={{ marginBottom: "24px" }}>
-          <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "600" }}>
+          <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "600", fontSize: "13px" }}>
             Title
           </label>
           <input 
             name="title" 
+            value={form.title}
             placeholder="e.g., Modern 2BHK in Downtown" 
             onChange={handleChange}
-            style={{ width: "100%" }}
+            style={inputStyle}
+            onFocus={(e) => { e.currentTarget.style.borderColor = "#6366f1"; e.currentTarget.style.background = "#0a0a0a"; }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = "#404040"; e.currentTarget.style.background = "#1a1a1a"; }}
           />
         </div>
 
         {/* Type and Purpose */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "24px" }}>
           <div>
-            <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "600" }}>
+            <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "600", fontSize: "13px" }}>
               Property Type
             </label>
-            <select name="type" onChange={handleChange}>
+            <select name="type" value={form.type} onChange={handleChange} style={{...inputStyle, cursor: "pointer"}}>
               <option value="">Select Type</option>
               <option value="ROOM">Room</option>
               <option value="PG">PG</option>
@@ -141,10 +191,10 @@ const AddProperty = () => {
           </div>
 
           <div>
-            <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "600" }}>
+            <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "600", fontSize: "13px" }}>
               Purpose
             </label>
-            <select name="purpose" onChange={handleChange}>
+            <select name="purpose" value={form.purpose} onChange={handleChange} style={{...inputStyle, cursor: "pointer"}}>
               <option value="">Select Purpose</option>
               <option value="RENT">Rent</option>
               <option value="SALE">Buy</option>
@@ -154,105 +204,111 @@ const AddProperty = () => {
 
         {/* Price */}
         <div style={{ marginBottom: "24px" }}>
-          <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "600" }}>
+          <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "600", fontSize: "13px" }}>
             Price (₹)
           </label>
           <input 
             name="price" 
+            value={form.price}
             placeholder="e.g., 50000" 
             type="number" 
             onChange={handleChange}
-            style={{ width: "100%" }}
+            style={inputStyle}
+            onFocus={(e) => { e.currentTarget.style.borderColor = "#6366f1"; e.currentTarget.style.background = "#0a0a0a"; }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = "#404040"; e.currentTarget.style.background = "#1a1a1a"; }}
           />
         </div>
 
-        {/* Location */}
+        {/* Location with Map Picker */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "24px" }}>
           <div>
-            <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "600" }}>
+            <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "600", fontSize: "13px" }}>
               City
             </label>
             <input 
               name="city" 
+              value={form.city}
               placeholder="e.g., Mumbai" 
               onChange={handleChange}
-              style={{ width: "100%" }}
+              style={inputStyle}
+              onFocus={(e) => { e.currentTarget.style.borderColor = "#6366f1"; e.currentTarget.style.background = "#0a0a0a"; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = "#404040"; e.currentTarget.style.background = "#1a1a1a"; }}
             />
           </div>
           <div>
-            <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "600" }}>
+            <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "600", fontSize: "13px" }}>
               Area
             </label>
             <input 
               name="area" 
+              value={form.area}
               placeholder="e.g., Bandra" 
               onChange={handleChange}
-              style={{ width: "100%" }}
+              style={inputStyle}
+              onFocus={(e) => { e.currentTarget.style.borderColor = "#6366f1"; e.currentTarget.style.background = "#0a0a0a"; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = "#404040"; e.currentTarget.style.background = "#1a1a1a"; }}
             />
           </div>
         </div>
 
-        {/* Coordinates */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "24px" }}>
-          <div>
-            <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "600" }}>
-              Latitude
-            </label>
-            <input 
-              name="latitude" 
-              placeholder="19.0760" 
-              type="number" 
-              onChange={handleChange}
-              style={{ width: "100%" }}
-            />
-          </div>
-          <div>
-            <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "600" }}>
-              Longitude
-            </label>
-            <input 
-              name="longitude" 
-              placeholder="72.8777" 
-              type="number" 
-              onChange={handleChange}
-              style={{ width: "100%" }}
-            />
-          </div>
+        {/* Map Picker for Location */}
+        <div style={{ marginBottom: "24px" }}>
+          <label style={{ display: "block", marginBottom: "12px", color: "#cbd5e1", fontWeight: "600", fontSize: "13px" }}>
+            📍 Set Exact Property Location
+          </label>
+          <MapPicker
+            latitude={form.latitude}
+            longitude={form.longitude}
+            onLocationChange={(lat, lon) => {
+              setForm({ ...form, latitude: lat.toString(), longitude: lon.toString() });
+            }}
+          />
+          {form.latitude && form.longitude && (
+            <p style={{ marginTop: "10px", fontSize: "12px", color: "#888", textAlign: "center" }}>
+              ✓ Coordinates: {Number(form.latitude).toFixed(4)}, {Number(form.longitude).toFixed(4)}
+            </p>
+          )}
         </div>
 
         {/* Amenities */}
         <div style={{ marginBottom: "24px" }}>
-          <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "600" }}>
+          <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "600", fontSize: "13px" }}>
             Amenities
           </label>
           <input
             name="amenities"
+            value={form.amenities}
             placeholder="e.g., wifi, parking, food (comma-separated)"
             onChange={handleChange}
-            style={{ width: "100%" }}
+            style={inputStyle}
+            onFocus={(e) => { e.currentTarget.style.borderColor = "#6366f1"; e.currentTarget.style.background = "#0a0a0a"; }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = "#404040"; e.currentTarget.style.background = "#1a1a1a"; }}
           />
         </div>
 
         {/* Description */}
         <div style={{ marginBottom: "24px" }}>
-          <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "600" }}>
+          <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "600", fontSize: "13px" }}>
             Description
           </label>
           <textarea
             name="description"
+            value={form.description}
             placeholder="Describe your property in detail..."
             onChange={handleChange}
             style={{ 
-              width: "100%",
+              ...inputStyle,
               minHeight: "120px",
-              fontSize: "14px"
+              resize: "vertical"
             }}
+            onFocus={(e) => { e.currentTarget.style.borderColor = "#6366f1"; e.currentTarget.style.background = "#0a0a0a"; }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = "#404040"; e.currentTarget.style.background = "#1a1a1a"; }}
           />
         </div>
 
         {/* Image Upload */}
         <div style={{ marginBottom: "32px" }}>
-          <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "600" }}>
+          <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "600", fontSize: "13px" }}>
             Property Image
           </label>
           <input
@@ -261,15 +317,19 @@ const AddProperty = () => {
             onChange={e => setImage(e.target.files?.[0] || null)}
             style={{
               width: "100%",
-              padding: "12px",
-              background: "rgba(15, 23, 42, 0.5)",
-              border: "1px solid rgba(102, 126, 234, 0.3)",
+              padding: "12px 14px",
+              background: "#1a1a1a",
+              border: "2px dashed #404040",
               borderRadius: "8px",
               color: "#cbd5e1",
-              cursor: "pointer"
+              cursor: "pointer",
+              transition: "all 0.2s ease",
+              boxSizing: "border-box"
             }}
+            onFocus={(e) => { e.currentTarget.style.borderColor = "#6366f1"; }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = "#404040"; }}
           />
-          {image && <p style={{ color: "#667eea", fontSize: "14px", marginTop: "8px" }}>✓ {image.name}</p>}
+          {image && <p style={{ color: "#6366f1", fontSize: "13px", marginTop: "8px", margin: "8px 0 0 0" }}>✓ {image.name}</p>}
         </div>
 
         {/* Submit Button */}
@@ -278,21 +338,34 @@ const AddProperty = () => {
           disabled={loading}
           style={{
             width: "100%",
-            padding: "14px",
-            background: loading ? "#64748b" : "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+            padding: "14px 20px",
+            background: loading ? "#555555" : "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)",
             color: "white",
             border: "none",
             borderRadius: "8px",
             fontWeight: "700",
-            fontSize: "16px",
+            fontSize: "15px",
             cursor: loading ? "not-allowed" : "pointer",
             transition: "all 0.3s ease",
+            textTransform: "uppercase",
+            letterSpacing: "0.5px",
             opacity: loading ? 0.7 : 1
           }}
+          onMouseEnter={(e) => {
+            if (!loading) {
+              e.currentTarget.style.transform = "translateY(-2px)";
+              e.currentTarget.style.boxShadow = "0 8px 16px rgba(99, 102, 241, 0.4)";
+            }
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = "translateY(0)";
+            e.currentTarget.style.boxShadow = "none";
+          }}
         >
-          {loading ? "Saving..." : "🚀 Save Property"}
+          {loading ? "Saving Property..." : "🚀 Save Property"}
         </button>
       </div>
+    </div>
     </div>
   );
 };

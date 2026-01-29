@@ -81,11 +81,11 @@ router.post("/", async (req, res) => {
   }
 });
 
-// Get all messages for a property between two users
+// Get all messages for a property between two specific users
 router.get("/property/:propertyId", async (req, res) => {
   try {
     const { propertyId } = req.params;
-    const { userEmail } = req.query;
+    const { userEmail, otherUserEmail } = req.query;
 
     if (!userEmail) {
       return res.status(400).json({ message: "User email is required" });
@@ -96,11 +96,27 @@ router.get("/property/:propertyId", async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Get all messages for this property where user is either sender or receiver
-    const messages = await Chat.find({
+    let query = {
       property: propertyId,
       $or: [{ sender: user._id }, { receiver: user._id }]
-    })
+    };
+
+    // If otherUserEmail is provided, filter to only show conversation with that user
+    if (otherUserEmail) {
+      const otherUser = await User.findOne({ email: otherUserEmail });
+      if (otherUser) {
+        query = {
+          property: propertyId,
+          $or: [
+            { sender: user._id, receiver: otherUser._id },
+            { sender: otherUser._id, receiver: user._id }
+          ]
+        };
+      }
+    }
+
+    // Get all messages for this property where user is either sender or receiver
+    const messages = await Chat.find(query)
       .populate("sender", "name email")
       .populate("receiver", "name email")
       .populate("property", "title location price")
@@ -110,6 +126,61 @@ router.get("/property/:propertyId", async (req, res) => {
   } catch (error) {
     console.error("Error fetching messages:", error);
     res.status(500).json({ message: "Failed to fetch messages" });
+  }
+});
+
+// Get all conversation threads for a property (for owner to see all users who messaged)
+router.get("/threads/:propertyId", async (req, res) => {
+  try {
+    const { propertyId } = req.params;
+    const { ownerEmail } = req.query;
+
+    if (!ownerEmail) {
+      return res.status(400).json({ message: "Owner email is required" });
+    }
+
+    const owner = await User.findOne({ email: ownerEmail });
+    if (!owner) {
+      return res.status(404).json({ message: "Owner not found" });
+    }
+
+    // Get all messages for this property where owner is involved
+    const messages = await Chat.find({
+      property: propertyId,
+      $or: [{ sender: owner._id }, { receiver: owner._id }]
+    })
+      .populate("sender", "name email")
+      .populate("receiver", "name email")
+      .sort({ createdAt: -1 });
+
+    // Group messages by the other user (not owner)
+    const threads = {};
+    messages.forEach(msg => {
+      const otherUser = msg.sender.email === ownerEmail ? msg.receiver : msg.sender;
+      const otherEmail = otherUser.email;
+      
+      if (!threads[otherEmail]) {
+        threads[otherEmail] = {
+          user: otherUser,
+          lastMessage: msg.message,
+          lastMessageTime: msg.createdAt,
+          unreadCount: 0,
+          messageCount: 0
+        };
+      }
+      threads[otherEmail].messageCount++;
+      if (!msg.read && msg.receiver.email === ownerEmail) {
+        threads[otherEmail].unreadCount++;
+      }
+    });
+
+    // Convert to array
+    const threadArray = Object.values(threads);
+
+    res.json(threadArray);
+  } catch (error) {
+    console.error("Error fetching threads:", error);
+    res.status(500).json({ message: "Failed to fetch threads" });
   }
 });
 

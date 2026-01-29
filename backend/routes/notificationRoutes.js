@@ -90,13 +90,49 @@ router.get("/user/:userEmail", async (req, res) => {
       to: user._id
     })
       .populate("from", "name email")
-      .populate("property", "_id title price status owner assignedTo")
+      .populate("property")
       .sort({ createdAt: -1 });
 
     res.json(notes);
   } catch (err) {
     console.error("LOAD USER NOTES ERROR:", err);
     res.status(500).json({ message: "Failed loading notifications" });
+  }
+});
+
+/* ================= CLEANUP ORPHANED NOTIFICATIONS ================= */
+
+router.delete("/cleanup/orphaned", async (req, res) => {
+  try {
+    const Property = require("../models/Property");
+    
+    // Get all notifications
+    const allNotifications = await Notification.find({});
+    
+    let deletedCount = 0;
+    
+    for (const notif of allNotifications) {
+      if (notif.property) {
+        // Check if property still exists
+        const propertyExists = await Property.findById(notif.property);
+        if (!propertyExists) {
+          await Notification.findByIdAndDelete(notif._id);
+          deletedCount++;
+        }
+      } else {
+        // No property reference, delete it
+        await Notification.findByIdAndDelete(notif._id);
+        deletedCount++;
+      }
+    }
+    
+    res.json({ 
+      message: `Cleanup complete. Deleted ${deletedCount} orphaned notifications.`,
+      deletedCount 
+    });
+  } catch (err) {
+    console.error("CLEANUP ERROR:", err);
+    res.status(500).json({ message: "Failed to cleanup notifications" });
   }
 });
 

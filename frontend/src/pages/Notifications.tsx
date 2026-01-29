@@ -83,10 +83,10 @@ const Notifications = () => {
     );
   }
 
-  // Separate notifications by type
-  const acceptanceNotes = userNotes.filter(n => n.action === "ACCEPTED");
-  const messageNotes = userNotes.filter(n => n.action === "MESSAGE");
-  const requestNotes = ownerNotes.filter(n => n.action !== "ACCEPTED" && n.action !== "MESSAGE");
+  // Separate notifications by type (filter out notifications with deleted properties)
+  const acceptanceNotes = userNotes.filter(n => n.action === "ACCEPTED" && n.property);
+  const messageNotes = userNotes.filter(n => n.action === "MESSAGE" && n.property);
+  const requestNotes = ownerNotes.filter(n => n.action !== "ACCEPTED" && n.action !== "MESSAGE" && n.property);
 
   const totalNotes = acceptanceNotes.length + messageNotes.length + requestNotes.length;
 
@@ -232,11 +232,22 @@ const Notifications = () => {
                     </Link>
                     <button
                       onClick={() => {
-                        const propId = typeof note.property === 'string' ? note.property : note.property?._id;
+                        // Handle both populated and non-populated property
+                        let propId = null;
+                        if (note.property) {
+                          if (typeof note.property === 'string') {
+                            propId = note.property;
+                          } else if (note.property._id) {
+                            propId = note.property._id;
+                          }
+                        }
+                        
                         if (propId) {
                           navigate(`/chat/${propId}`);
                         } else {
-                          alert("Property ID not available");
+                          // If no property ID, try to navigate to user's profile or show error
+                          console.log("Note data:", note);
+                          alert("Property ID not available. The property may have been deleted.");
                         }
                       }}
                       style={{

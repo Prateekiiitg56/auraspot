@@ -5,6 +5,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import type { User } from "firebase/auth";
 
 import { auth } from "./services/firebase";
+import { ThemeProvider } from "./context/ThemeContext";
 
 import Navbar from "./components/Navbar";
 import Home from "./pages/home";
@@ -19,6 +20,7 @@ import { API } from "./services/api";
 import Notifications from "./pages/Notifications";
 import MyDeals from "./pages/MyDeals";
 import Chat from "./pages/Chat";
+import AIMatch from "./pages/AIMatch";
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -53,26 +55,27 @@ useEffect(() => {
 
 
   return (
-    <Router>
-      <Navbar user={user} />
+    <ThemeProvider>
+      <Router>
+        <Navbar user={user} />
 
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/explore" element={<Explore />} />
-        <Route path="/add" element={<AddProperty />} />
-        <Route path="/profile" element={<Profile user={user} />} />
-        <Route path="/user/:email" element={<UserProfile />} />
-        <Route path="/property/:id" element={<PropertyDetails />} />
-        <Route path="/notifications" element={<Notifications />} />
-        <Route path="/my-deals" element={<MyDeals />} />
-        <Route path="/chat/:propertyId" element={<Chat />} />
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/explore" element={<Explore />} />
+          <Route path="/add" element={<AddProperty />} />
+          <Route path="/profile" element={<Profile user={user} />} />
+          <Route path="/user/:email" element={<UserProfile />} />
+          <Route path="/property/:id" element={<PropertyDetails />} />
+          <Route path="/notifications" element={<Notifications />} />
+          <Route path="/my-deals" element={<MyDeals />} />
+          <Route path="/chat/:propertyId" element={<Chat />} />
+          <Route path="/ai-match" element={<AIMatch />} />
 
-
-
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
-      </Routes>
-    </Router>
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
+        </Routes>
+      </Router>
+    </ThemeProvider>
   );
 }
 
