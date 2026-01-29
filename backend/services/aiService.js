@@ -3,7 +3,7 @@
  * Single AI model with caching and smart prompt engineering
  */
 
-const DEEPSEEK_API_KEY = "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";
+const DEEPSEEK_API_KEY = "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";
 const DEEPSEEK_MODEL = "tngtech/deepseek-r1t2-chimera:free";
 const API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -275,196 +275,45 @@ RESPOND WITH ONLY THIS JSON (no other text):
 
 /**
  * Calculate Fraud Risk
- * Enhanced with rule-based detection + AI
+ * Flags suspicious listings
  */
 async function calculateFraudRisk(property, ownerInfo = {}) {
   const cacheKey = `fraud_risk_${property._id}`;
   
-  // === RULE-BASED FRAUD DETECTION ===
-  const flags = [];
-  let riskScore = 0;
-  
-  // 1. Price Analysis (30 points max)
-  const expectedRange = calculateExpectedPriceRange(
-    property.city, 
-    property.type, 
-    property.bhk || 1
-  );
-  
-  const priceRatio = property.price / expectedRange.avg;
-  
-  if (priceRatio < 0.3) {
-    flags.push("Price is suspiciously low (less than 30% of market rate)");
-    riskScore += 30;
-  } else if (priceRatio < 0.5) {
-    flags.push("Price is significantly below market rate");
-    riskScore += 15;
-  } else if (priceRatio > 3) {
-    flags.push("Price is unusually high for this area");
-    riskScore += 10;
-  }
-  
-  // 2. Image Analysis (20 points max)
-  const imageCount = property.images?.length || 0;
-  if (imageCount === 0) {
-    flags.push("No property images provided");
-    riskScore += 20;
-  } else if (imageCount === 1) {
-    flags.push("Only one image available");
-    riskScore += 10;
-  }
-  
-  // 3. Description Quality (20 points max)
-  const description = property.description || "";
-  const descLength = description.length;
-  
-  if (descLength < 20) {
-    flags.push("Very short or missing description");
-    riskScore += 15;
-  } else if (descLength < 50) {
-    flags.push("Brief description - lacks details");
-    riskScore += 5;
-  }
-  
-  // Check for suspicious keywords
-  const suspiciousKeywords = [
-    "urgent", "quickly", "today only", "limited time", 
-    "act fast", "won't last", "immediate", "hurry",
-    "western union", "wire transfer", "advance payment",
-    "no verification", "no documents", "cash only"
-  ];
-  
-  const lowerDesc = description.toLowerCase();
-  const foundSuspicious = suspiciousKeywords.filter(kw => lowerDesc.includes(kw));
-  if (foundSuspicious.length > 0) {
-    flags.push(`Suspicious language: "${foundSuspicious.join(", ")}"`);
-    riskScore += 10 * Math.min(foundSuspicious.length, 2);
-  }
-  
-  // 4. Contact/Owner Info (15 points max)
-  if (!ownerInfo.verified) {
-    flags.push("Owner not verified");
-    riskScore += 10;
-  }
-  
-  if (!ownerInfo.phone && !ownerInfo.email) {
-    flags.push("No contact information available");
-    riskScore += 15;
-  }
-  
-  // 5. Listing Age (10 points max)
-  const listingAge = Date.now() - new Date(property.createdAt).getTime();
-  const daysOld = listingAge / (1000 * 60 * 60 * 24);
-  
-  if (daysOld < 1 && priceRatio < 0.5) {
-    flags.push("New listing with very low price");
-    riskScore += 10;
-  }
-  
-  // 6. Amenities vs Price Check (5 points max)
-  const amenities = property.amenities || [];
-  const premiumAmenities = ["AC", "Parking", "Gym", "Pool", "Security", "Power Backup"];
-  const hasPremium = amenities.some(a => premiumAmenities.includes(a));
-  
-  if (hasPremium && priceRatio < 0.4) {
-    flags.push("Premium amenities at suspiciously low price");
-    riskScore += 5;
-  }
-  
-  // Calculate risk level
-  let riskLevel = "LOW";
-  if (riskScore >= 40) riskLevel = "HIGH";
-  else if (riskScore >= 20) riskLevel = "MEDIUM";
-  
-  // Cap risk score at 100
-  riskScore = Math.min(riskScore, 100);
-  
-  // Reduce flags if risk is low
-  const topFlags = flags.slice(0, 4);
-  
-  // === AI ENHANCEMENT ===
-  const systemPrompt = `You are a fraud detection specialist for Indian real estate. 
-Analyze the listing and provide additional insights. Be specific and practical.
+  const systemPrompt = `You are a fraud detection specialist for real estate listings in India.
+Identify red flags and suspicious patterns. Be cautious but fair.
 Always respond with ONLY valid JSON.`;
 
-  const prompt = `Analyze this property listing for fraud risk:
+  const prompt = `Analyze this property listing for potential fraud indicators:
 
-Property: ${property.title}
-Type: ${property.type} | Location: ${property.city}, ${property.area || "N/A"}
-Price: ₹${property.price.toLocaleString()}/month
-Expected Market Price: ₹${expectedRange.min.toLocaleString()} - ₹${expectedRange.max.toLocaleString()}/month
-Images: ${imageCount} photos
-Description: "${description.substring(0, 200)}${description.length > 200 ? "..." : ""}"
-Owner Verified: ${ownerInfo.verified ? "Yes" : "No"}
+Property:
+- Title: ${property.title}
+- Type: ${property.type}
+- Location: ${property.city}, ${property.area || ""}
+- Price: ₹${property.price} (${property.listingType})
+- Posted: ${new Date(property.createdAt).toLocaleDateString()}
+- Description: ${property.description || "None"}
+- Images: ${property.images?.length || 0} photos
+- Owner verified: ${ownerInfo.verified || false}
 
-Pre-calculated Risk Score: ${riskScore}/100 (${riskLevel})
-Detected Flags: ${topFlags.length > 0 ? topFlags.join("; ") : "None"}
+Check for:
+1. Unrealistically low prices
+2. Vague or copied descriptions
+3. Missing important details
+4. Suspicious urgency language
+5. Too good to be true claims
 
-Provide ONLY a JSON response with:
+Respond with ONLY this JSON:
 {
-  "additionalFlags": [<any additional concerns we missed, max 2>],
-  "recommendation": "<specific advice for potential tenants, 15-25 words>",
-  "trustIndicators": [<positive signs if any, max 2>]
+  "riskLevel": "<LOW|MEDIUM|HIGH>",
+  "riskScore": <number 0-100>,
+  "flags": ["<flag1 if any>", "<flag2 if any>"],
+  "recommendation": "<advice for users>",
+  "verified": <true if seems legitimate>
 }`;
 
-  try {
-    const response = await callDeepSeek(prompt, systemPrompt, cacheKey);
-    const aiInsights = parseAIResponse(response);
-    
-    // Merge AI insights
-    if (aiInsights) {
-      if (aiInsights.additionalFlags?.length > 0) {
-        topFlags.push(...aiInsights.additionalFlags);
-        riskScore = Math.min(riskScore + aiInsights.additionalFlags.length * 5, 100);
-        // Recalculate level
-        if (riskScore >= 40) riskLevel = "HIGH";
-        else if (riskScore >= 20) riskLevel = "MEDIUM";
-      }
-      
-      return {
-        riskLevel,
-        riskScore,
-        flags: topFlags.slice(0, 5),
-        recommendation: aiInsights.recommendation || getDefaultRecommendation(riskLevel),
-        trustIndicators: aiInsights.trustIndicators || [],
-        verified: riskScore < 30,
-        priceComparison: {
-          expected: expectedRange.avg,
-          actual: property.price,
-          deviation: Math.round((priceRatio - 1) * 100) + "%"
-        }
-      };
-    }
-  } catch (error) {
-    console.error("[AI] Fraud detection AI enhancement failed:", error);
-  }
-  
-  // Fallback without AI
-  return {
-    riskLevel,
-    riskScore,
-    flags: topFlags,
-    recommendation: getDefaultRecommendation(riskLevel),
-    trustIndicators: riskScore < 20 ? ["Listed on verified platform", "Standard pricing"] : [],
-    verified: riskScore < 30,
-    priceComparison: {
-      expected: expectedRange.avg,
-      actual: property.price,
-      deviation: Math.round((priceRatio - 1) * 100) + "%"
-    }
-  };
-}
-
-// Helper for default recommendations
-function getDefaultRecommendation(riskLevel) {
-  switch (riskLevel) {
-    case "HIGH":
-      return "Exercise extreme caution. Verify all details in person before any payment. Request official documents.";
-    case "MEDIUM":
-      return "Proceed with caution. Visit the property and verify owner identity before making any commitments.";
-    default:
-      return "Standard precautions apply. Visit property and verify documents before signing agreement.";
-  }
+  const response = await callDeepSeek(prompt, systemPrompt, cacheKey);
+  return parseAIResponse(response);
 }
 
 /**
@@ -515,120 +364,42 @@ Respond with ONLY this JSON:
 
 /**
  * Smart Rent Suggestion
- * Enhanced with real market data + AI
+ * Suggests optimal rent price
  */
 async function suggestRentPrice(property) {
   const cacheKey = `rent_suggest_${property._id}`;
   
-  // Use our market benchmark data
-  const expectedRange = calculateExpectedPriceRange(
-    property.city,
-    property.type,
-    property.bhk || 1
-  );
-  
-  // Calculate furnishing premium
-  const furnishingPremiums = {
-    "Fully Furnished": 1.25,
-    "Semi Furnished": 1.1,
-    "Unfurnished": 1.0
-  };
-  const furnishingMultiplier = furnishingPremiums[property.furnishing] || 1.0;
-  
-  // Calculate amenity premium
-  const premiumAmenities = ["AC", "Parking", "Gym", "Pool", "Security", "Power Backup", "Lift"];
-  const amenityCount = (property.amenities || []).filter(a => 
-    premiumAmenities.some(p => a.toLowerCase().includes(p.toLowerCase()))
-  ).length;
-  const amenityPremium = 1 + (amenityCount * 0.03); // 3% per premium amenity
-  
-  // Calculate suggested rent with adjustments
-  const baseRent = expectedRange.avg;
-  const adjustedMin = Math.round(expectedRange.min * furnishingMultiplier * amenityPremium);
-  const adjustedAvg = Math.round(baseRent * furnishingMultiplier * amenityPremium);
-  const adjustedMax = Math.round(expectedRange.max * furnishingMultiplier * amenityPremium);
-  
-  // Assess current price
-  let currentAssessment = "FAIR";
-  const priceRatio = property.price / adjustedAvg;
-  if (priceRatio < 0.85) currentAssessment = "UNDERPRICED";
-  else if (priceRatio > 1.15) currentAssessment = "OVERPRICED";
-  
   const systemPrompt = `You are an Indian real estate pricing expert.
-Provide market insights based on the data provided. Be specific and helpful.
+Suggest accurate rental prices based on market knowledge.
 Always respond with ONLY valid JSON.`;
 
-  const prompt = `Analyze this rental property pricing:
+  const prompt = `Suggest optimal rent for this property:
 
-Property: ${property.type} | ${property.bhk || 1}BHK | ${property.city}
-Area: ${property.area || "Not specified"}
-Sqft: ${property.sqft || "Not specified"}
-Furnishing: ${property.furnishing || "Unfurnished"}
-Amenities: ${property.amenities?.join(", ") || "Basic"}
+Property:
+- Type: ${property.type}
+- Location: ${property.area || ""}, ${property.city}
+- BHK: ${property.bhk || "N/A"}
+- Sqft: ${property.sqft || "N/A"}
+- Furnishing: ${property.furnishing || "Unfurnished"}
+- Amenities: ${property.amenities?.join(", ") || "Basic"}
+- Current asking: ₹${property.price}/month
 
-Current Asking: ₹${property.price.toLocaleString()}/month
-Market Benchmark: ₹${expectedRange.min.toLocaleString()} - ₹${expectedRange.max.toLocaleString()}/month
-Adjusted for Furnishing/Amenities: ₹${adjustedMin.toLocaleString()} - ₹${adjustedMax.toLocaleString()}/month
-Pre-calculated Assessment: ${currentAssessment}
+Based on ${property.city} market rates, suggest:
 
-Provide insights:
+Respond with ONLY this JSON:
 {
-  "marketInsight": "<15-20 word insight about ${property.city} rental market for ${property.type}>",
-  "negotiationTip": "<practical tip for renters negotiating this property>",
-  "bestTimeToRent": "<when is the best time to rent in this area>",
-  "demandLevel": "<HIGH|MODERATE|LOW - demand for this type in ${property.city}>"
+  "suggestedRent": <number>,
+  "rentRange": {
+    "min": <number>,
+    "max": <number>
+  },
+  "currentPriceAssessment": "<UNDERPRICED|FAIR|OVERPRICED>",
+  "marketInsight": "<brief market insight>",
+  "negotiationTip": "<tip for renters>"
 }`;
 
-  try {
-    const response = await callDeepSeek(prompt, systemPrompt, cacheKey);
-    const aiInsights = parseAIResponse(response);
-    
-    return {
-      suggestedRent: adjustedAvg,
-      rentRange: {
-        min: adjustedMin,
-        max: adjustedMax
-      },
-      currentPrice: property.price,
-      currentPriceAssessment: currentAssessment,
-      marketBenchmark: expectedRange,
-      cityTier: expectedRange.tier,
-      marketInsight: aiInsights?.marketInsight || `${property.city} has a ${expectedRange.tier === "metro" ? "competitive" : "moderate"} rental market.`,
-      negotiationTip: aiInsights?.negotiationTip || (currentAssessment === "OVERPRICED" 
-        ? "This property is above market rate. You can negotiate 10-15% reduction."
-        : "Fair pricing. Check for hidden charges like maintenance fees."),
-      bestTimeToRent: aiInsights?.bestTimeToRent || "Off-peak months (April-July) typically have better deals.",
-      demandLevel: aiInsights?.demandLevel || (expectedRange.tier === "metro" ? "HIGH" : "MODERATE"),
-      factors: {
-        furnishingPremium: `+${Math.round((furnishingMultiplier - 1) * 100)}%`,
-        amenityPremium: `+${Math.round((amenityPremium - 1) * 100)}%`
-      }
-    };
-  } catch (error) {
-    console.error("[AI] Rent suggestion AI enhancement failed:", error);
-    
-    // Return calculated data without AI insights
-    return {
-      suggestedRent: adjustedAvg,
-      rentRange: {
-        min: adjustedMin,
-        max: adjustedMax
-      },
-      currentPrice: property.price,
-      currentPriceAssessment: currentAssessment,
-      marketBenchmark: expectedRange,
-      cityTier: expectedRange.tier,
-      marketInsight: `${property.type} in ${property.city} typically rents for ₹${expectedRange.min.toLocaleString()}-₹${expectedRange.max.toLocaleString()}/month.`,
-      negotiationTip: currentAssessment === "OVERPRICED" 
-        ? "This is above market rate. Consider negotiating or exploring other options."
-        : "This is fairly priced for the area.",
-      demandLevel: expectedRange.tier === "metro" ? "HIGH" : "MODERATE",
-      factors: {
-        furnishingPremium: `+${Math.round((furnishingMultiplier - 1) * 100)}%`,
-        amenityPremium: `+${Math.round((amenityPremium - 1) * 100)}%`
-      }
-    };
-  }
+  const response = await callDeepSeek(prompt, systemPrompt, cacheKey);
+  return parseAIResponse(response);
 }
 
 /**
@@ -676,60 +447,42 @@ Respond with ONLY this JSON:
 
 /**
  * General Property Q&A / Chat
- * Enhanced with market data context
+ * For chatbot interactions
  */
-async function propertyChat(propertyDetails, userQuestion, chatHistory = [], property = null) {
-  // If we have the property object, add market context
-  let marketContext = "";
-  if (property) {
-    const expectedRange = calculateExpectedPriceRange(
-      property.city,
-      property.type,
-      property.bhk || 1
-    );
-    const priceAnalysis = analyzePriceFairness(property.price, expectedRange);
-    
-    marketContext = `
-**Market Data for ${property.city}:**
-- Expected rent for ${property.type} ${property.bhk || 1}BHK: ₹${expectedRange.min.toLocaleString()} - ₹${expectedRange.max.toLocaleString()}/month
-- This property at ₹${property.price.toLocaleString()}: ${priceAnalysis.rating} (${priceAnalysis.note})
-- City Tier: ${expectedRange.tier}
-`;
-  }
+async function propertyChat(propertyDetails, userQuestion, chatHistory = []) {
+  const systemPrompt = `You are AuraSpot's friendly AI property assistant for Indian real estate.
 
-  const systemPrompt = `You are AuraSpot's AI property expert for Indian real estate.
-
-YOUR KNOWLEDGE:
-- Indian rental market rates across cities
-- Property valuation factors
-- Common scams and red flags
-- Legal requirements (rent agreements, deposits)
-- Negotiation tactics
-
-RESPONSE RULES:
-1. Be SPECIFIC - use actual numbers from the market data provided
-2. Be CONCISE - max 3 short paragraphs or bullet points
-3. Be HONEST - mention concerns if any
-4. Be HELPFUL - give actionable advice
-5. Use **bold** for key points, bullets for lists
+RESPONSE STYLE:
+- Be concise but informative (2-4 short paragraphs max)
+- Use simple formatting: **bold** for emphasis, bullet points for lists
+- Include specific numbers and facts when available
+- Give honest assessments with pros and cons
+- End with a practical recommendation or tip
 
 AVOID:
-- Generic responses without specifics
-- Very long explanations
-- Repeating the question
-- Being overly cautious without reason`;
+- Very long responses
+- Repeating information unnecessarily  
+- Generic advice without specifics
+- Starting with "I" or being overly formal
 
-  const historyText = chatHistory.slice(-4).map(m => 
+FOCUS AREAS:
+- Price fairness for the area
+- Location advantages/disadvantages
+- Value for money assessment
+- Red flags if any
+- Practical tips for the user`;
+
+  const historyText = chatHistory.slice(-5).map(m => 
     `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`
   ).join("\n");
 
-  const prompt = `**Property:**
+  const prompt = `**Property Details:**
 ${propertyDetails}
-${marketContext}
-${historyText ? `**Chat History:**\n${historyText}\n` : ""}
-**Question:** ${userQuestion}
 
-Give a specific, helpful response based on the data provided. Keep it under 150 words.`;
+${historyText ? `**Previous Chat:**\n${historyText}\n` : ""}
+**User Question:** ${userQuestion}
+
+Provide a helpful, specific response. Keep it under 200 words.`;
 
   // No caching for chat (dynamic)
   const response = await callDeepSeek(prompt, systemPrompt);

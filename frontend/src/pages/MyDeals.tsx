@@ -361,7 +361,7 @@ const MyDeals = () => {
               <Link to={`/property/${p._id}`} style={{ textDecoration: "none", color: "inherit" }}>
                 {p.image && (
                   <img
-                    src={`http://localhost:5000/uploads/${p.image}`}
+                    src={`${API}/uploads/${p.image}`}
                     alt={p.title}
                     style={{ width: "100%", height: "160px", objectFit: "cover" }}
                   />
@@ -460,7 +460,7 @@ const MyDeals = () => {
               <Link to={`/property/${p._id}`} style={{ textDecoration: "none", color: "inherit" }}>
                 {p.image && (
                   <img
-                    src={`http://localhost:5000/uploads/${p.image}`}
+                    src={`${API}/uploads/${p.image}`}
                     alt={p.title}
                     style={{ width: "100%", height: "160px", objectFit: "cover" }}
                   />

@@ -9,6 +9,20 @@ const aiService = require("../services/aiService");
 const Property = require("../models/Property");
 const User = require("../models/User");
 
+// Helper to remove undefined values from aiInsights before saving
+const sanitizeAiInsights = (existingInsights, newData) => {
+  const sanitized = {};
+  const combined = { ...existingInsights, ...newData };
+  
+  for (const [key, value] of Object.entries(combined)) {
+    if (value !== undefined) {
+      sanitized[key] = value;
+    }
+  }
+  
+  return sanitized;
+};
+
 /* ================= PROPERTY SCORE ================= */
 
 // Get AI score for a property
@@ -39,9 +53,8 @@ router.get("/score/:propertyId", async (req, res) => {
     const scoreData = await aiService.generatePropertyScore(property);
     
     if (scoreData && scoreData.score) {
-      // Save to property
-      property.aiInsights = {
-        ...property.aiInsights,
+      // Save to property with sanitized insights
+      property.aiInsights = sanitizeAiInsights(property.aiInsights?.toObject?.() || property.aiInsights || {}, {
         score: scoreData.score,
         priceRating: scoreData.priceRating,
         locationQuality: scoreData.locationQuality,
@@ -49,8 +62,13 @@ router.get("/score/:propertyId", async (req, res) => {
         concerns: scoreData.concerns || [],
         summary: scoreData.summary,
         generatedAt: new Date()
-      };
-      await property.save();
+      });
+      
+      try {
+        await property.save();
+      } catch (saveErr) {
+        console.warn("[AI] Failed to cache score, continuing:", saveErr.message);
+      }
       
       return res.json({ cached: false, ...scoreData });
     }
@@ -113,14 +131,18 @@ router.get("/fraud-check/:propertyId", async (req, res) => {
     const fraudData = await aiService.calculateFraudRisk(property, ownerInfo);
     
     if (fraudData) {
-      property.aiInsights = {
-        ...property.aiInsights,
+      property.aiInsights = sanitizeAiInsights(property.aiInsights?.toObject?.() || property.aiInsights || {}, {
         fraudRisk: fraudData.riskLevel,
         fraudScore: fraudData.riskScore,
         fraudFlags: fraudData.flags,
         generatedAt: new Date()
-      };
-      await property.save();
+      });
+      
+      try {
+        await property.save();
+      } catch (saveErr) {
+        console.warn("[AI] Failed to cache fraud data, continuing:", saveErr.message);
+      }
     }
 
     res.json({ cached: false, ...fraudData });
@@ -200,12 +222,16 @@ router.get("/rent-suggestion/:propertyId", async (req, res) => {
     const rentData = await aiService.suggestRentPrice(property);
     
     if (rentData) {
-      property.aiInsights = {
-        ...property.aiInsights,
+      property.aiInsights = sanitizeAiInsights(property.aiInsights?.toObject?.() || property.aiInsights || {}, {
         rentSuggestion: rentData,
         generatedAt: new Date()
-      };
-      await property.save();
+      });
+      
+      try {
+        await property.save();
+      } catch (saveErr) {
+        console.warn("[AI] Failed to cache rent suggestion, continuing:", saveErr.message);
+      }
     }
 
     res.json({ cached: false, ...rentData });

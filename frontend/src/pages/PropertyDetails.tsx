@@ -340,7 +340,7 @@ const canChat = currentUser && !isOwner;
             boxShadow: "0 20px 40px rgba(102, 126, 234, 0.15)"
           }}>
             <img
-              src={`http://localhost:5000/uploads/${allImages[currentImageIndex]}`}
+              src={`${API}/uploads/${allImages[currentImageIndex]}`}
               className="details-img"
               alt={`${property.title} - Image ${currentImageIndex + 1}`}
               style={{
@@ -457,7 +457,7 @@ const canChat = currentUser && !isOwner;
                   onMouseLeave={(e) => { if (currentImageIndex !== index) e.currentTarget.style.opacity = "0.6"; }}
                 >
                   <img
-                    src={`http://localhost:5000/uploads/${img}`}
+                    src={`${API}/uploads/${img}`}
                     alt={`Thumbnail ${index + 1}`}
                     style={{
                       width: "100%",

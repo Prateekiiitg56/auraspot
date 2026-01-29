@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { API } from "../services/api";
 
 interface AIScoreBadgeProps {
   score: number | null;
@@ -122,7 +123,7 @@ export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({ propertyId, on
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`http://localhost:5000/ai/score/${propertyId}`);
+      const res = await fetch(`${API}/ai/score/${propertyId}`);
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.message || "Failed to fetch");
@@ -333,7 +334,7 @@ export const FraudRiskBadge: React.FC<FraudRiskBadgeProps> = ({ propertyId }) =>
   useEffect(() => {
     const fetchRisk = async () => {
       try {
-        const res = await fetch(`http://localhost:5000/ai/fraud-check/${propertyId}`);
+        const res = await fetch(`${API}/ai/fraud-check/${propertyId}`);
         if (res.ok) {
           const data = await res.json();
           setRisk(data);
@@ -377,7 +378,7 @@ export const FraudRiskBadge: React.FC<FraudRiskBadgeProps> = ({ propertyId }) =>
 
 interface AIChatBoxProps {
   propertyId: string;
-  propertyTitle: string;
+  propertyTitle?: string;
 }
 
 // Helper function to format AI response text
@@ -501,7 +502,7 @@ export const AIChatBox: React.FC<AIChatBoxProps> = ({ propertyId }) => {
     setLoading(true);
 
     try {
-      const res = await fetch(`http://localhost:5000/ai/chat/${propertyId}`, {
+      const res = await fetch(`${API}/ai/chat/${propertyId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -1611,7 +1611,7 @@ const Profile = ({ user }: { user: User | null }) => {
                         }}>
                           {history.property?.image || history.property?.images?.[0] ? (
                             <img
-                              src={`http://localhost:5000/uploads/${history.property.image || history.property.images?.[0]}`}
+                              src={`${API}/uploads/${history.property.image || history.property.images?.[0]}`}
                               alt={history.property.title}
                               style={{
                                 width: "100%",

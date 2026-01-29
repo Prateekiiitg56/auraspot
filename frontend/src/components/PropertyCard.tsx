@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { API } from "../services/api";
 
 interface PropertyCardProps {
   property: {
@@ -132,7 +133,7 @@ const PropertyCard = ({ property }: PropertyCardProps) => {
       )}
 
       <img
-        src={displayImage ? `http://localhost:5000/uploads/${displayImage}` : "https://via.placeholder.com/300x200?text=No+Image"}
+        src={displayImage ? `${API}/uploads/${displayImage}` : "https://via.placeholder.com/300x200?text=No+Image"}
         className="property-img"
       />
       

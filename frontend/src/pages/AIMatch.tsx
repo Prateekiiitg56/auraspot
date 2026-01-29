@@ -44,7 +44,7 @@ const AMENITIES_LIST = [
 
 const AIMatch: React.FC = () => {
   const navigate = useNavigate();
-  const { darkMode } = useTheme();
+  useTheme(); // Initialize theme context
   
   // Form state
   const [preferredLocation, setPreferredLocation] = useState("");
@@ -167,7 +167,7 @@ const AIMatch: React.FC = () => {
       {/* Image */}
       <div style={{ height: "160px", overflow: "hidden" }}>
         <img
-          src={property.image ? `http://localhost:5000/uploads/${property.image}` : "https://via.placeholder.com/300x200?text=No+Image"}
+          src={property.image ? `${API}/uploads/${property.image}` : "https://via.placeholder.com/300x200?text=No+Image"}
           alt={property.title}
           style={{ width: "100%", height: "100%", objectFit: "cover" }}
         />

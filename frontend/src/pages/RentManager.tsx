@@ -67,7 +67,7 @@ interface PendingProperty {
 
 const RentManager: React.FC = () => {
   const navigate = useNavigate();
-  const { darkMode } = useTheme();
+  useTheme(); // Initialize theme context
   const [loading, setLoading] = useState(true);
   const [ownerAgreements, setOwnerAgreements] = useState<RentAgreement[]>([]);
   const [tenantAgreements, setTenantAgreements] = useState<RentAgreement[]>([]);
@@ -348,7 +348,7 @@ const RentManager: React.FC = () => {
         <div style={{ display: "flex", gap: "16px", padding: "20px" }}>
           <img
             src={agreement.property?.image 
-              ? `http://localhost:5000/uploads/${agreement.property.image}` 
+              ? `${API}/uploads/${agreement.property.image}` 
               : "https://via.placeholder.com/120x80?text=No+Image"}
             alt={agreement.property?.title}
             style={{
@@ -842,7 +842,7 @@ const RentManager: React.FC = () => {
                       <div style={{ display: "flex", gap: "12px" }}>
                         <img
                           src={property.image 
-                            ? `http://localhost:5000/uploads/${property.image}` 
+                            ? `${API}/uploads/${property.image}` 
                             : "https://via.placeholder.com/80x60?text=No+Image"}
                           alt={property.title}
                           style={{
@@ -1117,7 +1117,7 @@ const RentManager: React.FC = () => {
             }}>
               <img
                 src={selectedProperty.image 
-                  ? `http://localhost:5000/uploads/${selectedProperty.image}` 
+                  ? `${API}/uploads/${selectedProperty.image}` 
                   : "https://via.placeholder.com/80x60?text=No+Image"}
                 alt={selectedProperty.title}
                 style={{
