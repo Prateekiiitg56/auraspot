@@ -6,9 +6,6 @@ const connectDB = require("./config/db");
 const app = express();
 const path = require("path");
 
-// Connect to database
-connectDB();
-
 // CORS configuration for production
 const corsOptions = {
   origin: process.env.CORS_ORIGINS 
@@ -22,6 +19,17 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Connect to database on first request (lazy connection for serverless)
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (error) {
+    console.error("Database connection error:", error);
+    res.status(500).json({ error: "Database connection failed" });
+  }
+});
 
 // Health check endpoint
 app.get("/", (req, res) => {
