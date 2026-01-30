@@ -7,13 +7,13 @@ const multer = require("multer");
 const { calculatePropertyScore, getScoreDescription, calculateTrustBadge } = require("../utils/scoreCalculator");
 const { calculateAIMatchScore, getAISuggestions } = require("../utils/aiMatchEngine");
 const aiService = require("../services/aiService");
+const { uploadImage, uploadMultipleImages } = require("../services/cloudinaryService");
 
 const router = express.Router();
 
 /* ================= MULTER ================= */
 
 // Use memory storage for serverless (Vercel has read-only filesystem)
-// For production, you should upload to cloud storage (Cloudinary, S3, etc.)
 const storage = multer.memoryStorage();
 
 const upload = multer({ 
@@ -49,18 +49,19 @@ router.post("/", upload.array("images", 5), async (req, res) => {
       amenities = rawAmenities.map(a => String(a).trim()).filter(Boolean);
     }
 
-    // Handle multiple images - with memory storage, files are in buffer
-    // For production, upload to cloud storage (Cloudinary/S3) and store URLs
-    // For now, we'll store placeholder names or skip if no cloud storage configured
+    // Handle multiple images - upload to Cloudinary
     const imageFiles = req.files || [];
-    let imageFilenames = [];
+    let imageUrls = [];
     
     if (imageFiles.length > 0) {
-      // In serverless, we can't save to disk. Store as placeholder or implement cloud upload
-      // For now, generate unique names (in production, these would be cloud URLs)
-      imageFilenames = imageFiles.map((file, index) => 
-        `property_${Date.now()}_${index}_${file.originalname.replace(/[^a-zA-Z0-9.]/g, '_')}`
-      );
+      try {
+        // Upload images to Cloudinary and get URLs
+        imageUrls = await uploadMultipleImages(imageFiles, "auraspot/properties");
+        console.log(`[CLOUDINARY] Uploaded ${imageUrls.length} images`);
+      } catch (uploadError) {
+        console.error("[CLOUDINARY] Upload error:", uploadError);
+        // Continue without images if upload fails
+      }
     }
 
     const property = await Property.create({
@@ -74,8 +75,8 @@ router.post("/", upload.array("images", 5), async (req, res) => {
       longitude: Number(req.body.longitude),
       amenities,
       description: req.body.description,
-      images: imageFilenames,
-      image: imageFilenames[0] || null, // Keep first image for backward compatibility
+      images: imageUrls,
+      image: imageUrls[0] || null, // Keep first image for backward compatibility
       owner: owner._id,
       status: "AVAILABLE",
       // Set listing type based on purpose
@@ -252,12 +253,13 @@ router.put("/:id", upload.array("images", 5), async (req, res) => {
       }
     }
 
-    // Handle new images if uploaded
+    // Handle new images if uploaded - use Cloudinary
     const imageFiles = req.files || [];
     let images = property.images || [];
     if (imageFiles.length > 0) {
-      const newImageFilenames = imageFiles.map(file => file.filename);
-      images = [...images, ...newImageFilenames].slice(0, 5); // Keep max 5 images
+      // Upload new images to Cloudinary
+      const newImageUrls = await uploadMultipleImages(imageFiles, "auraspot/properties");
+      images = [...images, ...newImageUrls].slice(0, 5); // Keep max 5 images
     }
 
     // Update fields
