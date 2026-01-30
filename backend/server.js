@@ -8,7 +8,15 @@ const path = require("path");
 
 connectDB();
 
-app.use(cors());
+// CORS configuration for production
+const corsOptions = {
+  origin: process.env.CORS_ORIGINS 
+    ? process.env.CORS_ORIGINS.split(",") 
+    : ["http://localhost:5173", "http://localhost:3000"],
+  credentials: true
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use("/auth", require("./routes/authRoutes"));
@@ -78,13 +86,19 @@ const processRentReminders = async () => {
   }
 };
 
-// Run every hour
-setInterval(processRentReminders, 60 * 60 * 1000);
-// Also run once on startup (after 10 seconds to let DB connect)
-setTimeout(processRentReminders, 10000);
+// Only run cron jobs and listen in non-serverless environment
+if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
+  // Run every hour
+  setInterval(processRentReminders, 60 * 60 * 1000);
+  // Also run once on startup (after 10 seconds to let DB connect)
+  setTimeout(processRentReminders, 10000);
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+}
+
+// Export for Vercel serverless
+module.exports = app;
 
 
 

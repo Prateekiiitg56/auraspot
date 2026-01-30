@@ -762,35 +762,117 @@ npm test
 
 ## 📦 Deployment
 
-### Backend (Node.js)
+### 🚀 Deploy to Vercel (Recommended)
 
-```bash
-# Build for production
-npm install --production
+AuraSpot uses a **separate deployment** strategy - frontend and backend are deployed as two different Vercel projects.
 
-# Start with PM2
-pm2 start server.js --name auraspot-api
+#### Step 1: Deploy Backend
 
-# Or with Docker
-docker build -t auraspot-api .
-docker run -p 5000:5000 auraspot-api
+1. **Push your code to GitHub**
+   ```bash
+   git add .
+   git commit -m "Prepare for deployment"
+   git push origin main
+   ```
+
+2. **Go to [Vercel](https://vercel.com)** and sign in with GitHub
+
+3. **Import your repository** and select the `backend` folder as root directory
+
+4. **Configure Build Settings:**
+   - Framework Preset: `Other`
+   - Build Command: (leave empty)
+   - Output Directory: (leave empty)
+   - Install Command: `npm install`
+
+5. **Add Environment Variables** in Vercel Dashboard:
+   | Variable | Value |
+   |----------|-------|
+   | `MONGODB_URI` | Your MongoDB Atlas connection string |
+   | `DEEPSEEK_API_KEY` | Your OpenRouter API key |
+   | `DEEPSEEK_MODEL` | `tngtech/deepseek-r1t2-chimera:free` |
+   | `OPENROUTER_API_URL` | `https://openrouter.ai/api/v1/chat/completions` |
+   | `CORS_ORIGINS` | Your frontend URL (add after frontend deploy) |
+   | `NODE_ENV` | `production` |
+
+6. **Deploy** - Note your backend URL (e.g., `https://auraspot-backend.vercel.app`)
+
+#### Step 2: Deploy Frontend
+
+1. **Create a new Vercel project** for the frontend
+
+2. **Import the same repository** but select the `frontend` folder as root directory
+
+3. **Configure Build Settings:**
+   - Framework Preset: `Vite`
+   - Build Command: `npm run build`
+   - Output Directory: `dist`
+   - Install Command: `npm install`
+
+4. **Add Environment Variables** in Vercel Dashboard:
+   | Variable | Value |
+   |----------|-------|
+   | `VITE_API_URL` | Your backend URL from Step 1 |
+   | `VITE_FIREBASE_API_KEY` | Your Firebase API key |
+   | `VITE_FIREBASE_AUTH_DOMAIN` | `your-project.firebaseapp.com` |
+   | `VITE_FIREBASE_PROJECT_ID` | Your Firebase project ID |
+   | `VITE_FIREBASE_STORAGE_BUCKET` | `your-project.appspot.com` |
+   | `VITE_FIREBASE_MESSAGING_SENDER_ID` | Your sender ID |
+   | `VITE_FIREBASE_APP_ID` | Your app ID |
+   | `VITE_FIREBASE_MEASUREMENT_ID` | Your measurement ID |
+
+5. **Deploy** - Note your frontend URL
+
+#### Step 3: Update Backend CORS
+
+1. Go back to your **backend Vercel project**
+2. Update the `CORS_ORIGINS` environment variable with your frontend URL
+3. **Redeploy** the backend
+
+#### Step 4: Update Firebase Auth
+
+1. Go to [Firebase Console](https://console.firebase.google.com)
+2. Select your project → Authentication → Settings → Authorized domains
+3. **Add your Vercel frontend domain** (e.g., `auraspot.vercel.app`)
+
+### 🐳 Alternative: Docker Deployment
+
+#### Backend Dockerfile
+
+```dockerfile
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm install --production
+COPY . .
+EXPOSE 5000
+CMD ["node", "server.js"]
 ```
 
-### Frontend (Vite)
+#### Frontend Dockerfile
 
-```bash
-# Build for production
-npm run build
+```dockerfile
+FROM node:18-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
 
-# Preview build
-npm run preview
-
-# Deploy dist/ folder to:
-# - Vercel
-# - Netlify
-# - Firebase Hosting
-# - AWS S3 + CloudFront
+FROM nginx:alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/nginx.conf
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
 ```
+
+### ☁️ Alternative: Railway Deployment
+
+1. Go to [Railway](https://railway.app)
+2. Create new project → Deploy from GitHub
+3. Add both `frontend` and `backend` as separate services
+4. Add environment variables in Railway dashboard
+5. Railway will auto-detect and deploy
 
 ---
 
