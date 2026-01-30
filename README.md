@@ -9,10 +9,17 @@
 [![Node.js](https://img.shields.io/badge/Node.js-18.x-339933?style=flat-square&logo=node.js)](https://nodejs.org/)
 [![MongoDB](https://img.shields.io/badge/MongoDB-6.x-47A248?style=flat-square&logo=mongodb)](https://www.mongodb.com/)
 [![Firebase](https://img.shields.io/badge/Firebase-Auth-FFCA28?style=flat-square&logo=firebase)](https://firebase.google.com/)
+[![Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-000000?style=flat-square&logo=vercel)](https://vercel.com/)
+[![Cloudinary](https://img.shields.io/badge/Images-Cloudinary-3448C5?style=flat-square&logo=cloudinary)](https://cloudinary.com/)
 
 **A modern, full-stack real estate platform with AI-powered property insights, intelligent matching, and comprehensive rental management.**
 
-[Features](#-features) • [Tech Stack](#-tech-stack) • [Installation](#-installation) • [API Documentation](#-api-documentation) • [Screenshots](#-screenshots)
+### 🌐 Live Demo
+
+🔗 **Frontend:** [auraspot-frontend.vercel.app](https://auraspot-frontend.vercel.app)  
+🔗 **Backend API:** [auraspot-backend.vercel.app](https://auraspot-backend.vercel.app)
+
+[Features](#-features) • [Tech Stack](#-tech-stack) • [Installation](#-installation) • [API Documentation](#-api-documentation) • [Deployment](#-deployment)
 
 </div>
 
@@ -136,7 +143,8 @@ Node.js           - Runtime
 Express.js        - Web Framework
 MongoDB           - Database
 Mongoose          - ODM
-Multer            - File Uploads
+Multer            - File Uploads (Memory Storage)
+Cloudinary        - Cloud Image Storage
 node-cron         - Scheduled Tasks
 ```
 
@@ -191,13 +199,17 @@ AuraSpot/
 │   │   └── userRoutes.js         # User endpoints
 │   │
 │   ├── 📁 services/
-│   │   └── aiService.js          # DeepSeek AI integration
+│   │   ├── aiService.js          # DeepSeek AI integration
+│   │   └── cloudinaryService.js  # Cloud image upload service
 │   │
 │   ├── 📁 utils/
 │   │   ├── scoreCalculator.js    # Property scoring
 │   │   └── aiMatchEngine.js      # AI matching logic
 │   │
-│   ├── 📁 uploads/               # Property images
+│   ├── 📁 api/
+│   │   └── index.js              # Vercel serverless entry point
+│   │
+│   ├── vercel.json               # Vercel deployment config
 │   ├── server.js                 # Express app entry
 │   └── package.json
 │
@@ -311,7 +323,23 @@ The frontend will run on `http://localhost:5173`
    - Email/Password
    - Google
 3. Get your config from Project Settings → General → Your apps
-4. Update `frontend/src/services/firebase.ts` with your config
+4. Update `frontend/.env` with your Firebase config
+
+### 5. Cloudinary Setup (For Image Uploads)
+
+1. Create a free account at [Cloudinary](https://cloudinary.com/)
+2. Go to **Dashboard** to find your credentials:
+   - Cloud Name
+   - API Key
+   - API Secret
+3. Add these to your `backend/.env` file:
+   ```env
+   CLOUDINARY_CLOUD_NAME=your_cloud_name
+   CLOUDINARY_API_KEY=your_api_key
+   CLOUDINARY_API_SECRET=your_api_secret
+   ```
+
+> **Note:** Cloudinary is required for image uploads on Vercel deployment (serverless environments have read-only filesystems)
 
 ---
 
@@ -320,16 +348,28 @@ The frontend will run on `http://localhost:5173`
 ### Backend (`backend/.env`)
 
 ```env
+# Server Configuration
+PORT=5000
+NODE_ENV=development
+
 # MongoDB Connection
 MONGODB_URI=mongodb://localhost:27017/auraspot
 # or for MongoDB Atlas:
 # MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/auraspot
 
-# Server Port (optional, defaults to 5000)
-PORT=5000
-
 # AI Service (OpenRouter)
 DEEPSEEK_API_KEY=your_openrouter_api_key
+DEEPSEEK_MODEL=tngtech/deepseek-r1t2-chimera:free
+OPENROUTER_API_URL=https://openrouter.ai/api/v1/chat/completions
+
+# CORS Configuration (comma-separated origins for production)
+CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+
+# Cloudinary Configuration (for image uploads)
+# Get your credentials from https://cloudinary.com/console
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
 ```
 
 ### Frontend (`frontend/.env`)
@@ -794,6 +834,9 @@ AuraSpot uses a **separate deployment** strategy - frontend and backend are depl
    | `OPENROUTER_API_URL` | `https://openrouter.ai/api/v1/chat/completions` |
    | `CORS_ORIGINS` | Your frontend URL (add after frontend deploy) |
    | `NODE_ENV` | `production` |
+   | `CLOUDINARY_CLOUD_NAME` | Your Cloudinary cloud name |
+   | `CLOUDINARY_API_KEY` | Your Cloudinary API key |
+   | `CLOUDINARY_API_SECRET` | Your Cloudinary API secret |
 
 6. **Deploy** - Note your backend URL (e.g., `https://auraspot-backend.vercel.app`)
 
