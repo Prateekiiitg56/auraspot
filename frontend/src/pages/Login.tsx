@@ -1,8 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { auth, googleProvider } from "../services/firebase";
-import { signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
+import { signInWithEmailAndPassword, signInWithPopup, signInWithRedirect, getRedirectResult } from "firebase/auth";
 import { Link, useNavigate } from "react-router-dom";
 import { API } from "../services/api";
+
+// Detect if user is on mobile/iOS
+const isMobile = () => {
+  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+};
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -11,6 +16,36 @@ const Login = () => {
   const [loadingEmail, setLoadingEmail] = useState(false);
 
   const navigate = useNavigate();
+
+  // Handle redirect result when coming back from Google sign-in on mobile
+  useEffect(() => {
+    const handleRedirectResult = async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        if (result) {
+          const user = result.user;
+          // Sync user to MongoDB
+          try {
+            await fetch(`${API}/users/sync`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                firebaseUid: user.uid,
+                name: user.displayName,
+                email: user.email
+              })
+            });
+          } catch (syncErr) {
+            console.error("Sync error (non-fatal):", syncErr);
+          }
+          navigate("/profile");
+        }
+      } catch (err) {
+        console.error("Redirect result error:", err);
+      }
+    };
+    handleRedirectResult();
+  }, [navigate]);
 
   const login = async () => {
     if (!email || !password) {
@@ -58,6 +93,14 @@ const Login = () => {
     setLoadingGoogle(true);
 
     try {
+      // Use redirect on mobile (iOS Safari blocks popups)
+      if (isMobile()) {
+        await signInWithRedirect(auth, googleProvider);
+        // The result will be handled in useEffect after redirect
+        return;
+      }
+
+      // Use popup on desktop
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
 
