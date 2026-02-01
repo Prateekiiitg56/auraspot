@@ -105,8 +105,6 @@ const Login = () => {
       setLoadingGoogle(false);
       alert("Google login failed: " + (err.message || "Please try email/password login"));
     }
-  };;
-    }
   };
 
   return (
