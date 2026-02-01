@@ -4,9 +4,12 @@ import { signInWithEmailAndPassword, signInWithPopup, signInWithRedirect, getRed
 import { Link, useNavigate } from "react-router-dom";
 import { API } from "../services/api";
 
-// Detect if user is on mobile/iOS
+// Detect if user is on mobile/iOS/tablet
 const isMobile = () => {
-  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const userAgent = navigator.userAgent || navigator.vendor;
+  // Check for mobile devices including tablets
+  return /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(userAgent) ||
+         (navigator.maxTouchPoints > 0 && /Macintosh/.test(userAgent)); // iPad with desktop mode
 };
 
 const Login = () => {
