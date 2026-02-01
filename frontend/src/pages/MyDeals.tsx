@@ -375,7 +375,7 @@ const MyDeals = () => {
                 </div>
               </Link>
               
-              {/* Edit & Delete Actions */}}
+              {/* Edit & Delete Actions */}
               <div style={{
                 padding: "12px 16px",
                 borderTop: darkMode ? "1px solid rgba(226, 232, 240, 0.1)" : "1px solid #e5e7eb",
