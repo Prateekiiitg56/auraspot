@@ -96,14 +96,37 @@ const Login = () => {
     setLoadingGoogle(true);
 
     try {
-      // Always use redirect method - more reliable across all browsers/devices
-      // Popup method has issues with iOS, Safari, and some ad blockers
-      await signInWithRedirect(auth, googleProvider);
-      // The result will be handled in useEffect after redirect
+      // Use popup for desktop, redirect for mobile
+      if (isMobile()) {
+        await signInWithRedirect(auth, googleProvider);
+        return;
+      }
+
+      // Desktop: use popup
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+
+      // Sync user to MongoDB
+      try {
+        await fetch(`${API}/users/sync`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            firebaseUid: user.uid,
+            name: user.displayName,
+            email: user.email
+          })
+        });
+      } catch (syncErr) {
+        console.error("Sync error (non-fatal):", syncErr);
+      }
+
+      navigate("/profile");
     } catch (err: any) {
       console.error("Google login error:", err);
-      setLoadingGoogle(false);
       alert("Google login failed: " + (err.message || "Please try email/password login"));
+    } finally {
+      setLoadingGoogle(false);
     }
   };
 
