@@ -16,7 +16,7 @@
 
 ### 🌐 Live Demo
 
-🔗 **Frontend:** [auraspot-frontend.vercel.app](https://auraspot-frontend.vercel.app)  
+🔗 **Frontend:** [auraspot-frontend.vercel.app](https://auraspotfrontend.vercel.app/)  
 🔗 **Backend API:** [auraspot-backend.vercel.app](https://auraspot-backend.vercel.app)
 
 [Features](#-features) • [Tech Stack](#-tech-stack) • [Installation](#-installation) • [API Documentation](#-api-documentation) • [Deployment](#-deployment)
