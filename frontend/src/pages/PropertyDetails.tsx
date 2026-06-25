@@ -127,41 +127,6 @@ const PropertyDetails = () => {
 
   const currentUser = auth.currentUser;
 
-  const loadProperty = async () => {
-    try {
-      const res = await fetch(`${API}/properties/${id}`);
-      const data = await res.json();
-      setProperty(data);
-
-      // Load maintenance requests for this property if user is tenant
-      if (currentUser && data.assignedTo?.email === currentUser.email) {
-        loadMaintenanceRequests();
-      }
-
-      // Check if current user has already requested this property
-      if (currentUser) {
-        checkIfRequested();
-      }
-    } catch (err) {
-      console.error("Failed loading property", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const checkIfRequested = async () => {
-    if (!currentUser) return;
-    try {
-      const res = await fetch(`${API}/notifications/check-request/${id}/${currentUser.email}`);
-      if (res.ok) {
-        const data = await res.json();
-        setHasRequested(data.hasRequested);
-      }
-    } catch (err) {
-      // Silent fail
-    }
-  };
-
   const loadMaintenanceRequests = async () => {
     try {
       const res = await fetch(`${API}/maintenance/property/${id}`);
@@ -175,8 +140,42 @@ const PropertyDetails = () => {
   };
 
   useEffect(() => {
-    loadProperty();
-  }, [id]);
+    let cancelled = false;
+
+    const loadAll = async () => {
+      try {
+        const res = await fetch(`${API}/properties/${id}`);
+        const data = await res.json();
+        if (cancelled) return;
+        setProperty(data);
+
+        // Load maintenance requests if user is tenant
+        if (currentUser && data.assignedTo?.email === currentUser.email) {
+          loadMaintenanceRequests();
+        }
+
+        // Check if current user has already requested
+        if (currentUser) {
+          try {
+            const reqRes = await fetch(`${API}/notifications/check-request/${id}/${currentUser.email}`);
+            if (reqRes.ok && !cancelled) {
+              const reqData = await reqRes.json();
+              setHasRequested(reqData.hasRequested);
+            }
+          } catch {
+            // Silent fail
+          }
+        }
+      } catch (err) {
+        console.error("Failed loading property", err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    loadAll();
+    return () => { cancelled = true; };
+  }, [id, currentUser?.email]);
 
   if (loading) return <div className="page">Loading property...</div>;
   if (!property) return <div className="page">Property not found</div>;
@@ -224,7 +223,7 @@ const canChat = currentUser && !isOwner;
       if (!res.ok) throw new Error("Reset failed");
 
       alert("Property reset to AVAILABLE!");
-      await loadProperty();
+      window.location.reload();
     } catch (err) {
       console.error("Reset error:", err);
       alert("Failed to reset property");

@@ -652,7 +652,7 @@ export const AIChatBox: React.FC<AIChatBoxProps> = ({ propertyId }) => {
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyPress={(e) => e.key === "Enter" && sendMessage()}
+          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
           placeholder="Is this a good deal? What's nearby?"
           disabled={loading}
           style={{

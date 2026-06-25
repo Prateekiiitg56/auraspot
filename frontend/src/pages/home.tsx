@@ -16,12 +16,16 @@ type Property = {
 const Home = () => {
   const navigate = useNavigate();
   const [properties, setProperties] = useState<Property[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetch(`${API}/properties`)
       .then(res => res.json())
-      .then(data => setProperties(data))
-      .catch(err => console.error("Failed to fetch properties", err));
+      .then(data => {
+        setProperties(data);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
   }, []);
 
   return (
@@ -48,7 +52,6 @@ const Home = () => {
         </h1>
         <p style={{
           fontSize: "18px",
-          color: "#cbd5e1",
           marginBottom: "32px",
           maxWidth: "600px",
           margin: "0 auto 32px"
@@ -71,27 +74,38 @@ const Home = () => {
       {/* Featured Properties */}
       <div>
         <h2 style={{ marginBottom: "8px" }}>Featured Properties</h2>
-        <p style={{ color: "#94a3b8", marginBottom: "28px" }}>
+        <p style={{ marginBottom: "28px" }}>
           Check out our latest listings
         </p>
 
-        {properties.length === 0 && (
+        {loading ? (
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "60px 0",
+            gap: "12px"
+          }}>
+            <div className="ai-loading-spinner" />
+            <span style={{ color: "#94a3b8" }}>Loading properties...</span>
+          </div>
+        ) : properties.length === 0 ? (
           <div style={{
             padding: "60px 40px",
             textAlign: "center",
-            background: "linear-gradient(135deg, #1e293b 0%, #2d3748 100%)",
+            background: "linear-gradient(135deg, var(--card-bg-start) 0%, var(--card-bg-end) 100%)",
             borderRadius: "16px",
-            border: "1px solid rgba(226, 232, 240, 0.1)"
+            border: "1px solid var(--border-color)"
           }}>
             <p className="empty-text" style={{ marginTop: 0 }}>No properties found</p>
           </div>
+        ) : (
+          <div className="property-grid">
+            {properties.map(p => (
+              <PropertyCard key={p._id} property={p} />
+            ))}
+          </div>
         )}
-
-        <div className="property-grid">
-          {properties.map(p => (
-            <PropertyCard key={p._id} property={p} />
-          ))}
-        </div>
       </div>
     </div>
   );

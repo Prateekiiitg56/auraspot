@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { memo } from "react";
 import { getImageUrl } from "../services/api";
 
 interface PropertyCardProps {
@@ -51,7 +52,7 @@ const getScoreLabel = (score: number) => {
   return "Basic";
 };
 
-const PropertyCard = ({ property }: PropertyCardProps) => {
+const PropertyCard = memo(({ property }: PropertyCardProps) => {
   const navigate = useNavigate();
   // Prefer AI score over manual score
   const score = property.aiInsights?.score || property.propertyScore || 0;
@@ -135,6 +136,8 @@ const PropertyCard = ({ property }: PropertyCardProps) => {
       <img
         src={getImageUrl(displayImage)}
         className="property-img"
+        alt={`${property.title} - ${property.type} in ${property.city || "Unknown"}`}
+        loading="lazy"
       />
       
       {/* Image Count Badge */}
@@ -184,6 +187,8 @@ const PropertyCard = ({ property }: PropertyCardProps) => {
       </div>
     </div>
   );
-};
+});
+
+PropertyCard.displayName = "PropertyCard";
 
 export default PropertyCard;
