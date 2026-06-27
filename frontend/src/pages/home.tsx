@@ -20,12 +20,26 @@ const Home = () => {
 
   useEffect(() => {
     fetch(`${API}/properties`)
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(`Server returned status ${res.status}`);
+        }
+        return res.json();
+      })
       .then(data => {
-        setProperties(data);
+        if (Array.isArray(data)) {
+          setProperties(data);
+        } else {
+          console.error("API response is not an array:", data);
+          setProperties([]);
+        }
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch((err) => {
+        console.error("Error fetching properties:", err);
+        setProperties([]);
+        setLoading(false);
+      });
   }, []);
 
   return (

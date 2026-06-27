@@ -145,6 +145,9 @@ const PropertyDetails = () => {
     const loadAll = async () => {
       try {
         const res = await fetch(`${API}/properties/${id}`);
+        if (!res.ok) {
+          throw new Error(`Server returned status ${res.status}`);
+        }
         const data = await res.json();
         if (cancelled) return;
         setProperty(data);

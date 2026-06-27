@@ -111,24 +111,26 @@ const MyDeals = () => {
           return;
         }
 
-        // 📌 My listed properties (all statuses)
+        // My listed properties (all statuses)
         const listedRes = await fetch(
           `${API}/properties/owner/${user._id}`
         );
-        const listedData = await listedRes.json();
+        const listedData = listedRes.ok ? await listedRes.json() : [];
 
-        // 📦 All properties to find assigned deals
+        // All properties to find assigned deals
         const allRes = await fetch(`${API}/properties/all`);
-        const all = await allRes.json();
+        const all = allRes.ok ? await allRes.json() : [];
 
-        const myDeals = all.filter(
-          (p: any) =>
-            p.assignedTo &&
-            (p.assignedTo === user._id || p.assignedTo?._id === user._id) &&
-            (p.status === "BOOKED" || p.status === "SOLD")
-        );
+        const myDeals = Array.isArray(all) 
+          ? all.filter(
+              (p: any) =>
+                p.assignedTo &&
+                (p.assignedTo === user._id || p.assignedTo?._id === user._id) &&
+                (p.status === "BOOKED" || p.status === "SOLD")
+            )
+          : [];
 
-        setListed(listedData);
+        setListed(Array.isArray(listedData) ? listedData : []);
         setDeals(myDeals);
 
         // Check rating status for each deal
