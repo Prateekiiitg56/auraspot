@@ -137,8 +137,9 @@ const Notifications = () => {
   const acceptanceNotes = userNotes.filter(n => n.action === "ACCEPTED" && n.property);
   const messageNotes = userNotes.filter(n => n.action === "MESSAGE" && n.property);
   const requestNotes = ownerNotes.filter(n => n.action !== "ACCEPTED" && n.action !== "MESSAGE" && n.property);
+  const systemNotes = userNotes.filter(n => n.action !== "ACCEPTED" && n.action !== "MESSAGE");
 
-  const totalNotes = acceptanceNotes.length + messageNotes.length + requestNotes.length;
+  const totalNotes = acceptanceNotes.length + messageNotes.length + requestNotes.length + systemNotes.length;
 
   return (
     <div className="page">
@@ -465,6 +466,141 @@ const Notifications = () => {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* SYSTEM NOTIFICATIONS (Alerts & Updates) */}
+      {systemNotes.length > 0 && (
+        <div style={{ marginBottom: "48px" }}>
+          <h2 style={{ 
+            fontSize: "22px",
+            marginBottom: "20px",
+            color: "#a855f7",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px"
+          }}>
+            🔔 System Alerts & Updates ({systemNotes.length})
+          </h2>
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            {systemNotes.map(note => {
+              const prop = note.property;
+              const propId = prop ? (typeof prop === 'object' ? prop._id : prop) : null;
+              const propTitle = prop ? (typeof prop === 'object' ? prop.title : null) : null;
+              const propPrice = prop ? (typeof prop === 'object' ? prop.price : null) : null;
+
+              return (
+                <div key={note._id} style={{
+                  padding: "20px",
+                  background: "linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(45, 55, 72, 0.8) 100%)",
+                  border: "2px solid rgba(168, 85, 247, 0.3)",
+                  borderLeft: "4px solid #a855f7",
+                  borderRadius: "12px",
+                  transition: "all 0.3s ease"
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLDivElement).style.background = "linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(45, 55, 72, 0.95) 100%)";
+                  (e.currentTarget as HTMLDivElement).style.transform = "translateY(-2px)";
+                  (e.currentTarget as HTMLDivElement).style.boxShadow = "0 8px 24px rgba(168, 85, 247, 0.2)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLDivElement).style.background = "linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(45, 55, 72, 0.8) 100%)";
+                  (e.currentTarget as HTMLDivElement).style.transform = "translateY(0)";
+                  (e.currentTarget as HTMLDivElement).style.boxShadow = "none";
+                }}
+                >
+                  <div style={{ marginBottom: "12px" }}>
+                    <p style={{ margin: "0 0 4px 0", color: "#f1f5f9", fontWeight: "700" }}>
+                      {note.from?.name || note.from?.email || "System"}
+                    </p>
+                    <p style={{ margin: "0 0 8px 0", color: "#cbd5e1", fontSize: "14px" }}>
+                      {note.message}
+                    </p>
+                  </div>
+
+                  {propTitle && (
+                    <div style={{
+                      padding: "12px",
+                      background: "rgba(15, 23, 42, 0.6)",
+                      borderLeft: "3px solid #667eea",
+                      borderRadius: "6px",
+                      marginBottom: "12px",
+                      color: "#cbd5e1",
+                      fontSize: "14px"
+                    }}>
+                      <b>{propTitle}</b> {propPrice ? `— ₹${propPrice}` : ""}
+                    </div>
+                  )}
+
+                  <div style={{ 
+                    display: "flex", 
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    paddingTop: "12px",
+                    borderTop: "1px solid rgba(226, 232, 240, 0.1)"
+                  }}>
+                    <small style={{ color: "#64748b", fontSize: "12px" }}>
+                      {new Date(note.createdAt).toLocaleString()}
+                    </small>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      {propId && (
+                        <Link
+                          to={`/properties/${propId}`}
+                          style={{
+                            display: "inline-block",
+                            padding: "8px 16px",
+                            background: "rgba(59, 130, 246, 0.2)",
+                            border: "1px solid rgba(59, 130, 246, 0.3)",
+                            color: "#93c5fd",
+                            borderRadius: "6px",
+                            textDecoration: "none",
+                            fontSize: "12px",
+                            fontWeight: "600",
+                            cursor: "pointer",
+                            transition: "all 0.3s ease"
+                          }}
+                          onMouseEnter={(e) => {
+                            (e.currentTarget as HTMLAnchorElement).style.background = "rgba(59, 130, 246, 0.3)";
+                            (e.currentTarget as HTMLAnchorElement).style.borderColor = "rgba(59, 130, 246, 0.5)";
+                          }}
+                          onMouseLeave={(e) => {
+                            (e.currentTarget as HTMLAnchorElement).style.background = "rgba(59, 130, 246, 0.2)";
+                            (e.currentTarget as HTMLAnchorElement).style.borderColor = "rgba(59, 130, 246, 0.3)";
+                          }}
+                        >
+                          View Property
+                        </Link>
+                      )}
+                      <button
+                        onClick={() => deleteNotification(note._id)}
+                        style={{
+                          padding: "8px 16px",
+                          background: "rgba(239, 68, 68, 0.2)",
+                          border: "1px solid rgba(239, 68, 68, 0.3)",
+                          color: "#fca5a5",
+                          borderRadius: "6px",
+                          fontSize: "12px",
+                          fontWeight: "600",
+                          cursor: "pointer",
+                          transition: "all 0.3s ease"
+                        }}
+                        onMouseEnter={(e) => {
+                          (e.currentTarget as HTMLButtonElement).style.background = "rgba(239, 68, 68, 0.3)";
+                          (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(239, 68, 68, 0.5)";
+                        }}
+                        onMouseLeave={(e) => {
+                          (e.currentTarget as HTMLButtonElement).style.background = "rgba(239, 68, 68, 0.2)";
+                          (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(239, 68, 68, 0.3)";
+                        }}
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

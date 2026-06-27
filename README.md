@@ -1,4 +1,4 @@
-# 🏠 AuraSpot - AI-Powered Real Estate Marketplace
+# AuraSpot - AI-Powered Real Estate Marketplace
 
 <div align="center">
 
@@ -14,180 +14,135 @@
 
 **A modern, full-stack real estate platform with AI-powered property insights, intelligent matching, and comprehensive rental management.**
 
-### 🌐 Live Demo
+### Live Demo
 
-🔗 **Frontend:** [auraspot-frontend.vercel.app](https://auraspotfrontend.vercel.app/)  
-🔗 **Backend API:** [auraspot-backend.vercel.app](https://auraspot-backend.vercel.app)
+* **Frontend:** [auraspot-frontend.vercel.app](https://auraspot-frontend.vercel.app/)
+* **Backend API:** [auraspot-backend.vercel.app](https://auraspot-backend.vercel.app)
 
-[Features](#-features) • [Tech Stack](#-tech-stack) • [Installation](#-installation) • [API Documentation](#-api-documentation) • [Deployment](#-deployment)
+[Features](#features) • [Tech Stack](#tech-stack) • [Installation](#installation) • [API Documentation](#api-documentation) • [Deployment](#deployment)
 
 </div>
 
 ---
 
-## 📋 Table of Contents
+## Table of Contents
 
-- [Overview](#-overview)
-- [Features](#-features)
-- [Tech Stack](#-tech-stack)
-- [Project Structure](#-project-structure)
-- [Installation](#-installation)
-- [Environment Variables](#-environment-variables)
-- [API Documentation](#-api-documentation)
-- [Database Schema](#-database-schema)
-- [User Flows](#-user-flows)
-- [AI Features](#-ai-features)
-- [Contributing](#-contributing)
-- [License](#-license)
+- [Overview](#overview)
+- [Features](#features)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [Installation](#installation)
+- [Environment Variables](#environment-variables)
+- [API Documentation](#api-documentation)
+- [Database Schema](#database-schema)
+- [User Flows](#user-flows)
+- [AI Features](#ai-features)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
-## 🌟 Overview
+## Overview
 
-**AuraSpot** is a comprehensive real estate marketplace that connects property owners with potential tenants and buyers. The platform leverages AI to provide intelligent property scoring, fraud detection, price suggestions, and personalized property matching.
+AuraSpot is a comprehensive real estate marketplace that connects property owners with potential tenants and buyers. The platform leverages AI to provide intelligent property scoring, fraud risk detection, price suggestions, and personalized property matching.
 
 ### What Makes AuraSpot Special?
 
-- 🤖 **AI-Powered Insights** - Get instant property scores, fraud risk assessment, and fair rent suggestions
-- 💬 **Real-Time Chat** - Communicate directly with property owners before making decisions
-- 📊 **Analytics Dashboard** - Track rent collection, occupancy rates, and maintenance metrics
-- 🔔 **Smart Notifications** - Automated rent reminders and request updates
-- ⭐ **Trust System** - Verified owners with ratings and trust badges
-- 🔧 **Maintenance Tracking** - Complete maintenance request lifecycle management
+- **AI-Powered Insights**: Get instant property scores, fraud risk assessments, and fair rent suggestions.
+- **Real-Time Chat**: Communicate directly with property owners before making decisions.
+- **Analytics Dashboard**: Track rent collection, occupancy rates, and maintenance metrics.
+- **Smart Notifications**: Automated rent reminders, status updates, and request updates.
+- **Trust System**: Verified owners with ratings and trust badges.
+- **Maintenance Tracking**: Complete maintenance request lifecycle management.
 
 ---
 
-## ✨ Features
+## Features
 
-### 🏡 Property Management
+### Property Management
 
 | Feature | Description |
-|---------|-------------|
+|:---|:---|
 | **Multi-Image Upload** | Upload up to 5 images per property listing |
 | **Property Types** | Support for ROOM, PG, HOSTEL, FLAT, and HOME |
 | **Dual Purpose** | List properties for RENT or SALE |
-| **Location Mapping** | Store latitude/longitude for map integration |
+| **Location Mapping** | Store latitude/longitude with map display and location picker integrations |
 | **Amenities Selection** | 16+ amenities including WiFi, AC, Parking, Gym, etc. |
 | **Furnishing Options** | Furnished, Semi-Furnished, or Unfurnished |
 
-### 🤖 AI-Powered Features
+### AI-Powered Features
 
 | Feature | Description |
-|---------|-------------|
+|:---|:---|
 | **Property Score** | AI rates properties 0-100 based on location, price, amenities |
 | **Fraud Detection** | Risk assessment (LOW/MEDIUM/HIGH) with specific flags |
 | **Rent Suggestion** | AI recommends fair rent with market insights |
 | **Smart Matching** | Match users to properties based on preferences |
-| **Price Rating** | EXCELLENT → SUSPICIOUS price assessment |
+| **Price Rating** | EXCELLENT to SUSPICIOUS price assessment |
 
-### 💰 Rent Management
+### Rent Management
 
 | Feature | Description |
-|---------|-------------|
+|:---|:---|
 | **Rent Agreements** | Create and manage formal rental contracts |
-| **Payment Tracking** | Track monthly payments with history |
+| **Payment Tracking** | Track monthly payments with payment request history |
 | **Claim & Verify** | Tenant claims payment, owner verifies |
 | **Auto Reminders** | 5-day, due-date, and overdue notifications |
 | **Payment Status** | PAID, PENDING, or OVERDUE tracking |
 
-### 🔧 Maintenance System
+### Maintenance System
 
 | Feature | Description |
-|---------|-------------|
+|:---|:---|
 | **Request Categories** | Plumbing, Electrical, HVAC, Appliance, etc. |
 | **Priority Levels** | LOW, MEDIUM, HIGH, URGENT |
-| **Status Workflow** | PENDING → APPROVED → IN_PROGRESS → RESOLVED |
-| **Update Thread** | Communication history for each request |
-| **Vendor Tracking** | Store vendor info and estimated costs |
-
-### 👤 User System
-
-| Feature | Description |
-|---------|-------------|
-| **Dual Authentication** | Email/Password + Google Sign-In |
-| **User Roles** | USER (tenant/buyer) or OWNER |
-| **User Personas** | STUDENT, WORKER, or FAMILY profiles |
-| **Trust Badges** | NEW_SELLER → VERIFIED_OWNER → TRUSTED_SELLER → TOP_SELLER |
-| **Verification** | Aadhar, PAN, Driving License, Passport support |
-| **Rating System** | Bi-directional tenant ↔ owner ratings |
-
-### 📊 Analytics Dashboard
-
-- Monthly rent collection vs expected
-- 6-month rent trend charts
-- Occupancy rate tracking
-- Maintenance statistics
-- Average response time
-- Pending payment alerts
+| **Status Workflow** | PENDING -> APPROVED -> IN_PROGRESS -> RESOLVED |
+| **Update Thread** | Communication history, comments, and status updates for each request |
+| **Worker Assignment** | Assign service workers and add estimates |
 
 ---
 
-## 🛠 Tech Stack
+## Tech Stack
 
 ### Frontend
-
-```
-React 18          - UI Library
-TypeScript        - Type Safety
-Vite              - Build Tool
-React Router v6   - Navigation
-Firebase Auth     - Authentication
-CSS Modules       - Styling
-Context API       - State Management (Theme)
-```
+- React 18 (UI Library)
+- TypeScript (Type Safety)
+- Vite (Build Tool)
+- React Router v6 (Navigation)
+- Firebase Auth (Authentication)
+- CSS (Styling)
+- Context API (State Management)
 
 ### Backend
-
-```
-Node.js           - Runtime
-Express.js        - Web Framework
-MongoDB           - Database
-Mongoose          - ODM
-Multer            - File Uploads (Memory Storage)
-Cloudinary        - Cloud Image Storage
-node-cron         - Scheduled Tasks
-```
+- Node.js (Runtime)
+- Express.js (Web Framework)
+- MongoDB (Database)
+- Mongoose (ODM)
+- Multer (File Uploads)
+- Cloudinary (Cloud Image Storage)
 
 ### AI Integration
-
-```
-DeepSeek          - AI Model (via OpenRouter)
-Model             - tngtech/deepseek-r1t2-chimera:free
-Caching           - In-memory with 30-min TTL
-```
-
-### Authentication
-
-```
-Firebase Auth     - Authentication Provider
-Google OAuth      - Social Login
-Email/Password    - Traditional Login
-```
+- DeepSeek / Llama Models (via OpenRouter)
+- In-memory caching with TTL
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 AuraSpot/
-├── 📁 backend/
-│   ├── 📁 config/
+├── backend/
+│   ├── config/
 │   │   └── db.js                 # MongoDB connection
-│   │
-│   ├── 📁 controllers/
-│   │   ├── authController.js     # Auth logic
-│   │   └── propertyController.js # Property logic
-│   │
-│   ├── 📁 models/
-│   │   ├── Chat.js               # Chat messages
-│   │   ├── Maintenance.js        # Maintenance requests
-│   │   ├── Notification.js       # System notifications
-│   │   ├── Property.js           # Property listings
-│   │   ├── Rating.js             # User ratings
-│   │   ├── RentAgreement.js      # Rental contracts
-│   │   └── User.js               # User profiles
-│   │
-│   ├── 📁 routes/
+│   ├── models/
+│   │   ├── Chat.js               # Chat messages schema
+│   │   ├── Maintenance.js        # Maintenance requests schema
+│   │   ├── Notification.js       # System notifications schema
+│   │   ├── Property.js           # Property listings schema
+│   │   ├── Rating.js             # User ratings schema
+│   │   ├── RentAgreement.js      # Rental contracts schema
+│   │   └── User.js               # User profiles schema
+│   ├── routes/
 │   │   ├── aiRoutes.js           # AI endpoints
 │   │   ├── analyticsRoutes.js    # Analytics endpoints
 │   │   ├── authRoutes.js         # Auth endpoints
@@ -197,38 +152,28 @@ AuraSpot/
 │   │   ├── propertyRoutes.js     # Property endpoints
 │   │   ├── rentRoutes.js         # Rent management endpoints
 │   │   └── userRoutes.js         # User endpoints
-│   │
-│   ├── 📁 services/
-│   │   ├── aiService.js          # DeepSeek AI integration
+│   ├── services/
+│   │   ├── aiService.js          # AI integration logic
 │   │   └── cloudinaryService.js  # Cloud image upload service
-│   │
-│   ├── 📁 utils/
-│   │   ├── scoreCalculator.js    # Property scoring
-│   │   └── aiMatchEngine.js      # AI matching logic
-│   │
-│   ├── 📁 api/
+│   ├── utils/
+│   │   ├── scoreCalculator.js    # Property scoring utility
+│   │   └── aiMatchEngine.js      # AI matching logic utility
+│   ├── api/
 │   │   └── index.js              # Vercel serverless entry point
-│   │
 │   ├── vercel.json               # Vercel deployment config
-│   ├── server.js                 # Express app entry
-│   └── package.json
-│
-├── 📁 frontend/
-│   ├── 📁 public/
-│   │
-│   ├── 📁 src/
-│   │   ├── 📁 assets/            # Static assets
-│   │   │
-│   │   ├── 📁 components/
+│   └── server.js                 # Express app entry
+├── frontend/
+│   ├── src/
+│   │   ├── components/
 │   │   │   ├── Navbar.tsx        # Navigation bar
 │   │   │   ├── Footer.tsx        # Footer component
 │   │   │   ├── PropertyCard.tsx  # Property card
-│   │   │   └── AIComponents.tsx  # AI display components
-│   │   │
-│   │   ├── 📁 context/
+│   │   │   ├── AIComponents.tsx  # AI display components
+│   │   │   ├── MapDisplay.tsx    # Property location map rendering
+│   │   │   └── MapPicker.tsx     # Location selection map
+│   │   ├── context/
 │   │   │   └── ThemeContext.tsx  # Dark/Light theme
-│   │   │
-│   │   ├── 📁 pages/
+│   │   ├── pages/
 │   │   │   ├── home.tsx          # Landing page
 │   │   │   ├── Explore.tsx       # Property browsing
 │   │   │   ├── AddProperty.tsx   # Add listing
@@ -244,45 +189,30 @@ AuraSpot/
 │   │   │   ├── Analytics.tsx     # Owner dashboard
 │   │   │   ├── Login.tsx         # Login page
 │   │   │   └── Signup.tsx        # Registration
-│   │   │
-│   │   ├── 📁 services/
-│   │   │   ├── api.ts            # API base URL
-│   │   │   └── firebase.ts       # Firebase config
-│   │   │
-│   │   ├── App.tsx               # Main app + routes
+│   │   ├── App.tsx               # Main app routing
 │   │   ├── App.css               # Global styles
 │   │   ├── main.tsx              # Entry point
 │   │   └── index.css             # Base styles
-│   │
-│   ├── index.html
-│   ├── vite.config.ts
-│   ├── tsconfig.json
-│   └── package.json
-│
-├── package.json                  # Root package
-└── README.md                     # This file
+│   └── vite.config.ts
+└── package.json                  # Workspace settings
 ```
 
 ---
 
-## 🚀 Installation
+## Installation
 
 ### Prerequisites
-
-- **Node.js** >= 18.x
-- **MongoDB** >= 6.x (local or Atlas)
-- **Firebase Project** (for authentication)
-- **Git**
+- Node.js >= 18.x
+- MongoDB >= 6.x (local or Atlas)
+- Firebase Project (for authentication)
 
 ### 1. Clone the Repository
-
 ```bash
 git clone https://github.com/Prateekiiitg56/AuraSpot.git
 cd AuraSpot
 ```
 
 ### 2. Backend Setup
-
 ```bash
 # Navigate to backend
 cd backend
@@ -293,19 +223,17 @@ npm install
 # Create environment file
 cp .env.example .env
 
-# Configure your environment variables (see below)
+# Configure environment variables in .env
 
-# Start the server
+# Start the server locally
 node server.js
 ```
-
 The backend will run on `http://localhost:5000`
 
 ### 3. Frontend Setup
-
 ```bash
-# Open new terminal, navigate to frontend
-cd frontend
+# Navigate to frontend
+cd ../frontend
 
 # Install dependencies
 npm install
@@ -313,73 +241,30 @@ npm install
 # Start development server
 npm run dev
 ```
-
 The frontend will run on `http://localhost:5173`
-
-### 4. Firebase Setup
-
-1. Create a project at [Firebase Console](https://console.firebase.google.com/)
-2. Enable **Authentication** → Sign-in methods:
-   - Email/Password
-   - Google
-3. Get your config from Project Settings → General → Your apps
-4. Update `frontend/.env` with your Firebase config
-
-### 5. Cloudinary Setup (For Image Uploads)
-
-1. Create a free account at [Cloudinary](https://cloudinary.com/)
-2. Go to **Dashboard** to find your credentials:
-   - Cloud Name
-   - API Key
-   - API Secret
-3. Add these to your `backend/.env` file:
-   ```env
-   CLOUDINARY_CLOUD_NAME=your_cloud_name
-   CLOUDINARY_API_KEY=your_api_key
-   CLOUDINARY_API_SECRET=your_api_secret
-   ```
-
-> **Note:** Cloudinary is required for image uploads on Vercel deployment (serverless environments have read-only filesystems)
 
 ---
 
-## 🔐 Environment Variables
+## Environment Variables
 
 ### Backend (`backend/.env`)
-
 ```env
-# Server Configuration
 PORT=5000
 NODE_ENV=development
-
-# MongoDB Connection
 MONGODB_URI=mongodb://localhost:27017/auraspot
-# or for MongoDB Atlas:
-# MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/auraspot
-
-# AI Service (OpenRouter)
 DEEPSEEK_API_KEY=your_openrouter_api_key
 DEEPSEEK_MODEL=tngtech/deepseek-r1t2-chimera:free
 OPENROUTER_API_URL=https://openrouter.ai/api/v1/chat/completions
-
-# CORS Configuration (comma-separated origins for production)
 CORS_ORIGINS=http://localhost:5173,http://localhost:3000
-
-# Cloudinary Configuration (for image uploads)
-# Get your credentials from https://cloudinary.com/console
-CLOUDINARY_CLOUD_NAME=your_cloud_name
-CLOUDINARY_API_KEY=your_api_key
-CLOUDINARY_API_SECRET=your_api_secret
+CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
+CLOUDINARY_API_KEY=your_cloudinary_api_key
+CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 ```
 
 ### Frontend (`frontend/.env`)
-
 ```env
-# API Base URL
 VITE_API_URL=http://localhost:5000
-
-# Firebase Configuration
-VITE_FIREBASE_API_KEY=your_api_key
+VITE_FIREBASE_API_KEY=your_firebase_api_key
 VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
 VITE_FIREBASE_PROJECT_ID=your_project_id
 VITE_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
@@ -389,107 +274,99 @@ VITE_FIREBASE_APP_ID=your_app_id
 
 ---
 
-## 📚 API Documentation
-
-### Base URL
-
-```
-http://localhost:5000
-```
+## API Documentation
 
 ### Authentication Endpoints
-
 | Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/auth/signup` | Register new user |
-| POST | `/auth/login` | Authenticate user |
+|:---|:---|:---|
+| POST | `/auth/register` | Register a new user |
+| POST | `/auth/login` | Log in and authenticate a user |
 
 ### User Endpoints
-
 | Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/users/sync` | Sync Firebase user to MongoDB |
-| GET | `/users/:email` | Get user profile |
-| PUT | `/users/:email` | Update user profile |
+|:---|:---|:---|
+| POST | `/users/sync` | Sync Firebase user profile to MongoDB |
+| GET | `/users/:email` | Get user profile metadata |
+| PUT | `/users/:email` | Update user profile details |
+| GET | `/users/stats/:userId` | Get success rates and badge information |
 
 ### Property Endpoints
-
 | Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/properties` | Create property (multipart/form-data) |
-| GET | `/properties` | Get available properties |
-| GET | `/properties/all` | Get all properties |
-| GET | `/properties/owner/:ownerId` | Get owner's listings |
-| GET | `/properties/:id` | Get property details |
-| DELETE | `/properties/:id` | Delete property |
-| POST | `/properties/:id/request` | Request to rent/buy |
-| POST | `/properties/:id/approve` | Approve request |
-| POST | `/properties/ai-match` | AI property matching |
+|:---|:---|:---|
+| POST | `/properties` | Create a property listing (multipart/form-data) |
+| GET | `/properties` | Get currently active properties |
+| GET | `/properties/all` | Get all listed properties |
+| GET | `/properties/owner/:ownerId` | Get property listings created by owner |
+| GET | `/properties/:id` | Get individual property details |
+| DELETE | `/properties/:id` | Delete a property listing |
+| POST | `/properties/:id/request` | Submit a request to buy or rent a property |
+| POST | `/properties/:id/approve` | Approve a pending request |
+| POST | `/properties/ai-match` | Perform property match suggestions |
 
 ### Notification Endpoints
-
 | Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/notifications` | Create notification |
-| GET | `/notifications/owner/:ownerId` | Get owner's requests |
-| GET | `/notifications/user/:userEmail` | Get user's notifications |
-| GET | `/notifications/check-request/:propertyId/:email` | Check existing request |
-| POST | `/notifications/reject/:notificationId` | Reject request |
-| DELETE | `/notifications/:id` | Delete notification |
+|:---|:---|:---|
+| POST | `/notifications` | Dispatch a system notification |
+| GET | `/notifications/owner/:ownerId` | Fetch pending requests for an owner |
+| GET | `/notifications/user/:userEmail` | Fetch notification history for a user |
+| GET | `/notifications/check-request/:propertyId/:email` | Verify if user has already requested |
+| POST | `/notifications/reject/:notificationId` | Reject a pending request |
+| DELETE | `/notifications/cleanup/orphaned` | Clean up deleted property notifications |
+| DELETE | `/notifications/:id` | Delete an individual notification |
 
 ### Chat Endpoints
-
 | Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/chat` | Send message |
-| GET | `/chat/property/:propertyId` | Get conversation |
-| GET | `/chat/conversations/:userEmail` | List all chats |
-| PUT | `/chat/mark-read` | Mark as read |
+|:---|:---|:---|
+| POST | `/chat` | Send a new chat message |
+| GET | `/chat/property/:propertyId` | Get messages filter by property and users |
+| GET | `/chat/threads/:propertyId` | Get all active conversation threads for a property |
+| GET | `/chat/conversations/:userEmail` | List all chats for a specific user |
+| PUT | `/chat/read/:propertyId` | Mark messages for a property as read |
+| GET | `/chat/unread/:userEmail` | Get unread message count |
 
 ### Rent Management Endpoints
-
 | Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/rent/create` | Create rent agreement |
-| GET | `/rent/owner/:email` | Get owner's agreements |
-| GET | `/rent/tenant/:email` | Get tenant's agreements |
-| GET | `/rent/:id` | Get agreement details |
-| POST | `/rent/:id/pay` | Confirm payment |
-| POST | `/rent/:id/request-payment` | Claim payment |
-| POST | `/rent/:id/terminate` | End agreement |
+|:---|:---|:---|
+| POST | `/rent/create` | Set up a new rent agreement |
+| GET | `/rent/owner/:email` | Get active agreements for owner |
+| GET | `/rent/tenant/:email` | Get active agreements for tenant |
+| GET | `/rent/:id` | Get rent agreement details |
+| POST | `/rent/:id/request-payment` | Initiate a new payment request |
+| POST | `/rent/:id/pay` | Claim that payment has been paid |
+| POST | `/rent/:id/verify-payment` | Verify and approve a payment claim |
+| POST | `/rent/:id/terminate` | Terminate an active agreement |
+| GET | `/rent/process-reminders` | Trigger rent reminders computation (both GET/POST) |
 
 ### Maintenance Endpoints
-
 | Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/maintenance` | Create request |
-| GET | `/maintenance/tenant/:email` | Tenant's requests |
-| GET | `/maintenance/owner/:email` | Owner's requests |
-| GET | `/maintenance/:id` | Get request details |
-| PUT | `/maintenance/:id/status` | Update status |
-| POST | `/maintenance/:id/update` | Add comment |
+|:---|:---|:---|
+| POST | `/maintenance` | Request maintenance support |
+| GET | `/maintenance/tenant/:email` | View requests submitted by tenant |
+| GET | `/maintenance/owner/:email` | View requests received by owner |
+| GET | `/maintenance/:id` | Get details of a maintenance request |
+| PUT | `/maintenance/:id/status` | Update maintenance status |
+| POST | `/maintenance/:id/assign-worker` | Assign worker and add budget cost |
+| POST | `/maintenance/:id/comment` | Add comment thread update |
+| POST | `/maintenance/:id/rate` | Rate maintenance work quality |
 
 ### AI Endpoints
-
 | Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/ai/score/:propertyId` | Get AI property score |
-| GET | `/ai/fraud-check/:propertyId` | Check fraud risk |
-| POST | `/ai/match` | AI property matching |
-| GET | `/ai/rent-suggestion/:propertyId` | Get rent suggestion |
+|:---|:---|:---|
+| GET | `/ai/score/:propertyId` | Calculate property rating score |
+| GET | `/ai/fraud-check/:propertyId` | Detect fraud risk parameters |
+| POST | `/ai/match` | Match properties to user preferences |
+| GET | `/ai/rent-suggestion/:propertyId` | Get fair rent recommendations |
 
 ### Analytics Endpoints
-
 | Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/analytics/owner/:email` | Get owner analytics |
+|:---|:---|:---|
+| GET | `/analytics/owner/:email` | Get owner analytics parameters |
 
 ---
 
-## 🗄 Database Schema
+## Database Schema
 
 ### User Schema
-
 ```javascript
 {
   name: String,
@@ -517,7 +394,6 @@ http://localhost:5000
 ```
 
 ### Property Schema
-
 ```javascript
 {
   title: String,
@@ -562,7 +438,6 @@ http://localhost:5000
 ```
 
 ### RentAgreement Schema
-
 ```javascript
 {
   property: ObjectId (ref: Property),
@@ -593,376 +468,164 @@ http://localhost:5000
 
 ---
 
-## 🔄 User Flows
+## User Flows
 
 ### Property Request Flow
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  1. User browses properties on Explore page                 │
-│                          ↓                                  │
-│  2. User clicks "Request to Rent/Buy" on PropertyDetails    │
-│     • Property stays AVAILABLE (others can also request)    │
-│     • Notification sent to owner                            │
-│     • User sees "Request Sent" status                       │
-│                          ↓                                  │
-│  3. Owner receives request in Notifications page            │
-│     Options:                                                │
-│     • 💬 "Chat First" → Discuss with requester              │
-│     • ✓ "Accept" → Property becomes BOOKED                  │
-│     • ✗ "Reject" → Requester notified                       │
-│                          ↓                                  │
-│  4. If Accepted:                                            │
-│     • Rent Agreement created automatically                  │
-│     • Tenant notified of acceptance                         │
-│     • Property marked as BOOKED                             │
-└─────────────────────────────────────────────────────────────┘
-```
+1. User browses properties on the Explore page.
+2. User clicks "Request to Rent/Buy" on the Property Details page.
+   - Property remains AVAILABLE (others can still request).
+   - Notification is sent to the property owner.
+   - User sees "Request Sent" status.
+3. Owner receives request in the Notification center.
+   - Chat First: Option to discuss with the requester.
+   - Accept: Mark property status as BOOKED.
+   - Reject: Rejection notification is sent to the requester.
+4. If Accepted:
+   - Rent agreement is created automatically.
+   - Tenant is notified of approval.
+   - Property status is marked as BOOKED.
 
 ### Rent Payment Flow
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  1. Automated reminder sent 5 days before due date          │
-│                          ↓                                  │
-│  2. Tenant makes payment (external)                         │
-│                          ↓                                  │
-│  3. Tenant clicks "Claim Payment" in RentManager            │
-│                          ↓                                  │
-│  4. Owner receives payment verification request             │
-│                          ↓                                  │
-│  5. Owner clicks "Confirm Payment"                          │
-│     • Payment logged in history                             │
-│     • Next payment date calculated                          │
-│     • Status updated to PAID                                │
-│                          ↓                                  │
-│  6. Cycle repeats next month                                │
-└─────────────────────────────────────────────────────────────┘
-```
+1. Automated reminder sent 5 days before due date.
+2. Tenant makes payment (externally).
+3. Tenant clicks "Claim Payment" inside the Rent Manager dashboard.
+4. Owner receives payment verification request notification.
+5. Owner reviews and clicks "Confirm Payment".
+   - Payment event is recorded in the history log.
+   - Next payment date is calculated.
+   - Payment status is set to PAID.
+6. Cycle repeats monthly.
 
 ### Maintenance Request Flow
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  1. Tenant submits request                                  │
-│     • Selects category (Plumbing, Electrical, etc.)         │
-│     • Sets priority (LOW → URGENT)                          │
-│     • Describes issue                                       │
-│                          ↓                                  │
-│  2. Owner receives notification                             │
-│     Status: PENDING                                         │
-│                          ↓                                  │
-│  3. Owner reviews and approves                              │
-│     Status: APPROVED                                        │
-│                          ↓                                  │
-│  4. Work begins                                             │
-│     Status: IN_PROGRESS                                     │
-│     • Owner can add updates/comments                        │
-│                          ↓                                  │
-│  5. Issue fixed                                             │
-│     Status: RESOLVED                                        │
-└─────────────────────────────────────────────────────────────┘
-```
+1. Tenant submits request specifying category (Plumbing, Electrical, etc.), priority (LOW -> URGENT), and issue description.
+2. Owner receives notification; request status set to PENDING.
+3. Owner reviews, assigns a service worker with estimates, and approves. Status updates to APPROVED.
+4. Work proceeds, status updates to IN_PROGRESS. Owner and tenant can post updates/comments.
+5. Issue is resolved; status updates to RESOLVED.
+6. Tenant rates the service quality.
 
 ---
 
-## 🤖 AI Features
+## AI Features
 
-### How AI Scoring Works
-
-The AI analyzes multiple factors to generate a property score:
-
-```
-Property Score (0-100)
-├── Location Quality (25%)
-│   ├── City tier (metro/non-metro)
-│   ├── Area reputation
-│   └── Connectivity
-│
-├── Price Fairness (25%)
-│   ├── Comparison with market rates
-│   ├── Price per sqft analysis
-│   └── Value for amenities
-│
-├── Amenities (20%)
-│   ├── Essential amenities present
-│   ├── Luxury amenities
-│   └── Amenity-price ratio
-│
-├── Demand Score (15%)
-│   ├── View count
-│   ├── Contact requests
-│   └── Time on market
-│
-└── Owner Credibility (15%)
-    ├── Verification status
-    ├── Rating score
-    └── Successful deals
-```
+### Property Score (0-100)
+- Location Quality (25%): City tier, area quality, connectivity.
+- Price Fairness (25%): Comparison against local benchmark rates.
+- Amenities (20%): Value/amenities density ratio.
+- Demand Score (15%): View counts and engagement metrics.
+- Owner Credibility (15%): Owner ratings and verification badges.
 
 ### Fraud Detection Flags
-
-The AI checks for suspicious patterns:
-
-- 🚩 Price significantly below market rate
-- 🚩 New account with luxury listing
-- 🚩 Vague or copied descriptions
-- 🚩 Missing location details
-- 🚩 Unrealistic amenities for price
-- 🚩 Stock photos detected
+- Price significantly below local average rates.
+- Newly registered accounts with high-value luxury properties.
+- Ambiguous/copied descriptions.
+- Empty location details.
+- Suspicious amenity-to-price ratio.
 
 ### AI Match Algorithm
-
-```javascript
-// User provides:
-{
-  preferredLocation: "Mumbai",
-  budgetMin: 10000,
-  budgetMax: 25000,
-  purpose: "RENT",
-  propertyType: "FLAT",
-  userProfile: "WORKER",
-  requiredAmenities: ["WiFi", "AC", "Parking"]
-}
-
-// AI returns categorized matches:
-{
-  topMatches: [...],      // Highest overall score
-  budgetFriendly: [...],  // Best value for money
-  closest: [...]          // Nearest to preferred location
-}
-```
+Filters properties by location, budget limits, user profile roles (Worker, Student, Family), and specific amenities checklist to return optimal matches categorized under:
+- Top Matches (Highest suitability match).
+- Budget Friendly (Best price value).
+- Closest Matches (Nearest physical distance).
 
 ---
 
-## 🎨 Theme Support
+## Theme Support
 
-AuraSpot supports **Dark** and **Light** themes:
-
+Supports Dark and Light themes managed through the Context API:
 ```tsx
-// ThemeContext provides:
-{
-  theme: "light" | "dark",
-  toggleTheme: () => void
-}
-
-// Usage in components:
-const { theme } = useTheme();
+const { theme, toggleTheme } = useTheme();
 ```
 
 ---
 
-## 🔔 Automated Notifications
+## Automated Notifications
 
-### Rent Reminders (Cron Job)
+### Rent Reminders (Vercel Cron Integration)
+Configured to trigger daily via the `/rent/process-reminders` endpoint:
+- 5 days before due date: "Rent reminder: ₹X due in 5 days"
+- Due date: "Rent due today: ₹X for [Property]"
+- Overdue: "OVERDUE: Rent of ₹X was due X days ago"
 
-Runs every hour to check for:
-
-| Timing | Action |
-|--------|--------|
-| 5 days before | "Rent reminder: ₹X due in 5 days" |
-| Due date | "Rent due today: ₹X for [Property]" |
-| Overdue | "OVERDUE: Rent of ₹X was due X days ago" |
-
-### System Notifications
-
-- ✅ Request accepted
-- ❌ Request rejected
-- 💬 New message received
-- 📝 Rent agreement created
-- 🔧 Maintenance request updates
-- 💰 Payment confirmations
+### System Updates
+- Request acceptance and rejections.
+- Real-time message counts.
+- Rent agreement creations.
+- Maintenance update notifications.
+- Payment confirmation updates.
 
 ---
 
-## 🏆 Trust Badge System
+## Trust Badge System
 
-| Badge | Requirements |
-|-------|--------------|
-| 🆕 **NEW_SELLER** | Default for all new accounts |
-| ✅ **VERIFIED_OWNER** | Submitted verification documents |
-| ⭐ **TRUSTED_SELLER** | 5+ successful deals + 4.0+ rating |
-| 👑 **TOP_SELLER** | 10+ deals + 4.5+ rating + verified |
+- **NEW_SELLER**: Default trust tier for new listings.
+- **VERIFIED_OWNER**: Submitted verification documents.
+- **TRUSTED_SELLER**: 5+ successful deals + 4.0+ average user rating.
+- **TOP_SELLER**: 10+ deals + 4.5+ average rating + verified owner.
 
 ---
 
-## 🧪 Testing
+## Deployment
 
-```bash
-# Backend testing
-cd backend
-npm test
+### Deploying to Vercel
 
-# Frontend testing
-cd frontend
-npm test
-```
-
----
-
-## 📦 Deployment
-
-### 🚀 Deploy to Vercel (Recommended)
-
-AuraSpot uses a **separate deployment** strategy - frontend and backend are deployed as two different Vercel projects.
+AuraSpot uses a split deployment strategy: the frontend and backend are deployed as two independent Vercel projects.
 
 #### Step 1: Deploy Backend
-
-1. **Push your code to GitHub**
-   ```bash
-   git add .
-   git commit -m "Prepare for deployment"
-   git push origin main
-   ```
-
-2. **Go to [Vercel](https://vercel.com)** and sign in with GitHub
-
-3. **Import your repository** and select the `backend` folder as root directory
-
-4. **Configure Build Settings:**
+1. Go to Vercel and import the repository.
+2. Select the `backend` folder as the root directory.
+3. Configure Build Settings:
    - Framework Preset: `Other`
-   - Build Command: (leave empty)
-   - Output Directory: (leave empty)
    - Install Command: `npm install`
-
-5. **Add Environment Variables** in Vercel Dashboard:
-   | Variable | Value |
-   |----------|-------|
-   | `MONGODB_URI` | Your MongoDB Atlas connection string |
-   | `DEEPSEEK_API_KEY` | Your OpenRouter API key |
-   | `DEEPSEEK_MODEL` | `tngtech/deepseek-r1t2-chimera:free` |
-   | `OPENROUTER_API_URL` | `https://openrouter.ai/api/v1/chat/completions` |
-   | `CORS_ORIGINS` | Your frontend URL (add after frontend deploy) |
-   | `NODE_ENV` | `production` |
-   | `CLOUDINARY_CLOUD_NAME` | Your Cloudinary cloud name |
-   | `CLOUDINARY_API_KEY` | Your Cloudinary API key |
-   | `CLOUDINARY_API_SECRET` | Your Cloudinary API secret |
-
-6. **Deploy** - Note your backend URL (e.g., `https://auraspot-backend.vercel.app`)
+4. Add environment variables:
+   - `MONGODB_URI`, `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `OPENROUTER_API_URL`, `CORS_ORIGINS`, `NODE_ENV`, `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`.
+5. Deploy and copy the live backend URL.
 
 #### Step 2: Deploy Frontend
-
-1. **Create a new Vercel project** for the frontend
-
-2. **Import the same repository** but select the `frontend` folder as root directory
-
-3. **Configure Build Settings:**
+1. Import the same repository on Vercel.
+2. Select the `frontend` folder as the root directory.
+3. Configure Build Settings:
    - Framework Preset: `Vite`
    - Build Command: `npm run build`
    - Output Directory: `dist`
    - Install Command: `npm install`
+4. Add environment variables:
+   - `VITE_API_URL` (with your backend URL), and all Firebase client variables.
+5. Deploy and copy the frontend URL.
 
-4. **Add Environment Variables** in Vercel Dashboard:
-   | Variable | Value |
-   |----------|-------|
-   | `VITE_API_URL` | Your backend URL from Step 1 |
-   | `VITE_FIREBASE_API_KEY` | Your Firebase API key |
-   | `VITE_FIREBASE_AUTH_DOMAIN` | `your-project.firebaseapp.com` |
-   | `VITE_FIREBASE_PROJECT_ID` | Your Firebase project ID |
-   | `VITE_FIREBASE_STORAGE_BUCKET` | `your-project.appspot.com` |
-   | `VITE_FIREBASE_MESSAGING_SENDER_ID` | Your sender ID |
-   | `VITE_FIREBASE_APP_ID` | Your app ID |
-   | `VITE_FIREBASE_MEASUREMENT_ID` | Your measurement ID |
-
-5. **Deploy** - Note your frontend URL
-
-#### Step 3: Update Backend CORS
-
-1. Go back to your **backend Vercel project**
-2. Update the `CORS_ORIGINS` environment variable with your frontend URL
-3. **Redeploy** the backend
-
-#### Step 4: Update Firebase Auth
-
-1. Go to [Firebase Console](https://console.firebase.google.com)
-2. Select your project → Authentication → Settings → Authorized domains
-3. **Add your Vercel frontend domain** (e.g., `auraspot.vercel.app`)
-
-### 🐳 Alternative: Docker Deployment
-
-#### Backend Dockerfile
-
-```dockerfile
-FROM node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm install --production
-COPY . .
-EXPOSE 5000
-CMD ["node", "server.js"]
-```
-
-#### Frontend Dockerfile
-
-```dockerfile
-FROM node:18-alpine AS builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm install
-COPY . .
-RUN npm run build
-
-FROM nginx:alpine
-COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/nginx.conf
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
-```
-
-### ☁️ Alternative: Railway Deployment
-
-1. Go to [Railway](https://railway.app)
-2. Create new project → Deploy from GitHub
-3. Add both `frontend` and `backend` as separate services
-4. Add environment variables in Railway dashboard
-5. Railway will auto-detect and deploy
+#### Step 3: Configure CORS & Firebase
+1. Set the backend `CORS_ORIGINS` variable on Vercel with your new frontend URL and redeploy.
+2. Add your frontend domain to the Firebase Console under Authentication -> Settings -> Authorized domains.
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Code Style
-
-- Use **ESLint** for JavaScript/TypeScript
-- Follow **Prettier** formatting
-- Write meaningful commit messages
-- Add comments for complex logic
+1. Fork the repository.
+2. Create a feature branch (`git checkout -b feature/amazing-feature`).
+3. Commit changes (`git commit -m 'Add amazing feature'`).
+4. Push to the branch (`git push origin feature/amazing-feature`).
+5. Open a Pull Request.
 
 ---
 
-## 📄 License
+## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 👨‍💻 Author
-
-**Prateek** - [GitHub](https://github.com/Prateekiiitg56)
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ---
 
-## 🙏 Acknowledgments
+## Authors
 
-- [React](https://reactjs.org/) - UI Library
-- [MongoDB](https://www.mongodb.com/) - Database
-- [Firebase](https://firebase.google.com/) - Authentication
-- [DeepSeek](https://deepseek.com/) - AI Model
-- [OpenRouter](https://openrouter.ai/) - AI API Gateway
-- [Vite](https://vitejs.dev/) - Build Tool
+* **Prateek** - [GitHub](https://github.com/Prateekiiitg56)
 
 ---
 
-<div align="center">
+## Acknowledgments
 
-**⭐ Star this repo if you find it helpful!**
-
-Made with ❤️ by Prateek
-
-</div>
+- React
+- MongoDB
+- Firebase
+- DeepSeek
+- OpenRouter
+- Vite

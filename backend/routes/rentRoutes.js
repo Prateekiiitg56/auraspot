@@ -450,7 +450,7 @@ router.post("/:id/terminate", async (req, res) => {
 
 /* ================= PROCESS RENT REMINDERS (CRON ENDPOINT) ================= */
 
-router.post("/process-reminders", async (req, res) => {
+const processRemindersHandler = async (req, res) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -536,7 +536,10 @@ router.post("/process-reminders", async (req, res) => {
     console.error("PROCESS REMINDERS ERROR:", err);
     res.status(500).json({ message: "Failed to process reminders" });
   }
-});
+};
+
+router.post("/process-reminders", processRemindersHandler);
+router.get("/process-reminders", processRemindersHandler);
 
 /* ================= GET AGREEMENT BY PROPERTY ================= */
 
