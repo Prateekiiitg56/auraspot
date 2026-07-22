@@ -107,6 +107,31 @@ const Home = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [selectedMock, setSelectedMock] = useState(MOCK_LISTINGS[0]);
 
+  // 3D Perspective Tilt State
+  const [tiltStyle, setTiltStyle] = useState({ transform: "perspective(1200px) rotateX(0deg) rotateY(0deg)" });
+
+  const handleMouseMove3D = (e: React.MouseEvent<HTMLDivElement>) => {
+    const card = e.currentTarget;
+    const rect = card.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+
+    const rotateX = ((y - centerY) / centerY) * -12;
+    const rotateY = ((x - centerX) / centerX) * 12;
+
+    setTiltStyle({
+      transform: `perspective(1200px) rotateX(${rotateX.toFixed(2)}deg) rotateY(${rotateY.toFixed(2)}deg) scale3d(1.02, 1.02, 1.02)`
+    });
+  };
+
+  const handleMouseLeave3D = () => {
+    setTiltStyle({
+      transform: "perspective(1200px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)"
+    });
+  };
+
   const searchBoxRef = useRef<HTMLDivElement>(null);
 
   // Filter autocomplete suggestions based on query
@@ -250,10 +275,18 @@ const Home = () => {
               </div>
             </div>
 
-            {/* Right Column: Clean Non-Overlapping Paper Card Stack */}
-            <div className="hero-card-stack">
-              {/* Photo Preview Card */}
-              <div className="photo-preview-card">
+            {/* Right Column: Interactive 3D Perspective Tilt Card Stack */}
+            <div
+              className="hero-card-stack-3d"
+              onMouseMove={handleMouseMove3D}
+              onMouseLeave={handleMouseLeave3D}
+              style={{
+                ...tiltStyle,
+                transition: "transform 0.15s cubic-bezier(0.16, 1, 0.3, 1)"
+              }}
+            >
+              {/* Photo Preview Card with 3D Depth */}
+              <div className="card-3d-tilt card-sheen">
                 <div style={{ position: "relative" }}>
                   <img
                     src={properties.length > 0 && properties[0].images?.[0] 
@@ -262,24 +295,26 @@ const Home = () => {
                     alt="AuraSpot Property Verification"
                     className="photo-preview-img"
                   />
-                  <div style={{ position: "absolute", top: "12px", right: "12px", zIndex: 5 }}>
-                    <VerificationStamp size="sm" rotation={-4} />
+                  <div className="stamp-3d-floating" style={{ position: "absolute", top: "14px", right: "14px", zIndex: 10 }}>
+                    <VerificationStamp size="md" rotation={-6} />
                   </div>
                 </div>
 
-                <div style={{ padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--paper-subtle)" }}>
+                <div style={{ padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--paper-subtle)" }}>
                   <div>
-                    <div style={{ fontSize: "14px", fontWeight: 600, fontFamily: "var(--font-serif)" }}>Riverside Flat 2BHK</div>
+                    <div style={{ fontSize: "15px", fontWeight: 650, fontFamily: "var(--font-serif)", color: "var(--ink)" }}>Riverside Flat 2BHK</div>
                     <div style={{ fontSize: "12px", color: "var(--ink-soft)" }}>Uzan Bazar, Guwahati</div>
                   </div>
-                  <div className="mono" style={{ fontSize: "16px", fontWeight: 700, color: "var(--blueprint)" }}>
+                  <div className="mono" style={{ fontSize: "17px", fontWeight: 700, color: "var(--blueprint)" }}>
                     ₹18,500/mo
                   </div>
                 </div>
               </div>
 
-              {/* Inspection Survey Grade Note */}
-              <SurveyGrade score={87} gradeLabel="GRADE A · LOW RISK" />
+              {/* Elevated 3D Inspection Survey Grade Note */}
+              <div style={{ transform: "translateZ(25px)" }}>
+                <SurveyGrade score={87} gradeLabel="GRADE A · VERIFIED LOW RISK" />
+              </div>
             </div>
           </div>
         </div>

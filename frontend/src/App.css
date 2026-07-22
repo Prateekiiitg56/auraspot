@@ -351,12 +351,52 @@ nav { display: flex; align-items: center; justify-content: space-between; paddin
   color: var(--color-text-main);
 }
 
-/* Asymmetric Hero Card Stack */
-.hero-card-stack {
+/* ---------- 3D PERSPECTIVE & ELEVATION EFFECTS ---------- */
+.hero-card-stack-3d {
+  perspective: 1200px;
+  transform-style: preserve-3d;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
   position: relative;
+}
+
+.card-3d-tilt {
+  transform-style: preserve-3d;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease, border-color 0.3s ease;
+  position: relative;
+  background: var(--paper-subtle);
+  border: 1px solid var(--paper-line);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.25), 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+.card-3d-tilt:hover {
+  transform: translateY(-6px) rotateX(3deg) rotateY(-3deg);
+  border-color: var(--blueprint);
+  box-shadow: 0 22px 45px -12px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--blueprint);
+}
+
+.stamp-3d-floating {
+  animation: float3D 4s ease-in-out infinite alternate;
+  transform-style: preserve-3d;
+  filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.35));
+}
+@keyframes float3D {
+  0% { transform: translateY(0px) rotateZ(-4deg) translateZ(30px); }
+  100% { transform: translateY(-8px) rotateZ(-7deg) translateZ(45px); }
+}
+
+.card-sheen {
+  position: relative;
+  overflow: hidden;
+}
+.card-sheen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0) 50%);
+  pointer-events: none;
+  border-radius: inherit;
 }
 
 .photo-preview-card {
@@ -369,7 +409,7 @@ nav { display: flex; align-items: center; justify-content: space-between; paddin
 
 .photo-preview-img {
   width: 100%;
-  height: 220px;
+  height: 230px;
   object-fit: cover;
   display: block;
 }
@@ -446,16 +486,22 @@ nav { display: flex; align-items: center; justify-content: space-between; paddin
 }
 
 .bento-hero-card {
-  background: var(--color-bg-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
+  background: var(--paper-subtle);
+  border: 1px solid var(--paper-line);
+  border-radius: var(--radius-sm);
   padding: 28px;
-  box-shadow: var(--shadow-card);
+  box-shadow: 0 10px 25px -8px rgba(0, 0, 0, 0.25);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   position: relative;
   overflow: hidden;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease, border-color 0.3s ease;
+}
+.bento-hero-card:hover {
+  transform: translateY(-5px) rotateX(2deg) rotateY(-2deg);
+  border-color: var(--blueprint);
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.35);
 }
 
 .bento-side-column {
@@ -465,20 +511,21 @@ nav { display: flex; align-items: center; justify-content: space-between; paddin
 }
 
 .bento-side-card {
-  background: var(--color-bg-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
+  background: var(--paper-subtle);
+  border: 1px solid var(--paper-line);
+  border-radius: var(--radius-sm);
   padding: 22px;
-  box-shadow: var(--shadow-subtle);
+  box-shadow: var(--shadow-paper);
   flex: 1;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  transition: transform 0.2s ease, border-color 0.2s ease;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.3s ease, box-shadow 0.3s ease;
 }
 .bento-side-card:hover {
-  transform: translateY(-2px);
-  border-color: var(--color-primary);
+  transform: translateY(-5px) rotateX(2deg) rotateY(-2deg);
+  border-color: var(--blueprint);
+  box-shadow: 0 16px 32px -8px rgba(0, 0, 0, 0.3);
 }
 
 .bento-card-header {
