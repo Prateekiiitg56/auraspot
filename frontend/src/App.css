@@ -221,6 +221,112 @@ nav { display: flex; align-items: center; justify-content: space-between; paddin
 .btn-solid:hover { background: var(--color-primary-hover); transform: translateY(-1px); box-shadow: 0 4px 10px rgba(79, 70, 229, 0.35); }
 .btn-solid:active { transform: translateY(0); box-shadow: 0 1px 3px rgba(79, 70, 229, 0.2); }
 
+/* ---------- 3D ANIMATED TYPOGRAPHY SYSTEM ---------- */
+.eyebrow-3d-glow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--blueprint);
+  background: var(--paper-subtle);
+  border: 1px solid var(--paper-line);
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), inset 0 1px 1px rgba(255, 255, 255, 0.5);
+  margin-bottom: 16px;
+  animation: eyebrowEntrance3D 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.eyebrow-3d-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--blueprint);
+  box-shadow: 0 0 8px var(--blueprint);
+  animation: pulseDot 2s ease-in-out infinite alternate;
+}
+
+@keyframes pulseDot {
+  0% { transform: scale(0.9); opacity: 0.7; }
+  100% { transform: scale(1.3); opacity: 1; }
+}
+
+@keyframes eyebrowEntrance3D {
+  0% { opacity: 0; transform: translateY(-10px) rotateX(15deg) scale(0.95); }
+  100% { opacity: 1; transform: translateY(0) rotateX(0deg) scale(1); }
+}
+
+/* 3D Extruded Modern Headline */
+.hero-headline-3d {
+  font-family: var(--font-serif);
+  font-size: 46px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin: 0 0 18px;
+  perspective: 800px;
+  animation: heroHeadlineReveal3D 0.75s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  text-shadow: 0 1px 0 #D9D3C2, 0 2px 0 #C4BEAF, 0 3px 0 #B0A99A, 0 8px 16px rgba(23, 26, 31, 0.12);
+  transition: text-shadow 0.25s ease;
+}
+
+body.dark-mode .hero-headline-3d,
+[data-theme="dark"] .hero-headline-3d {
+  text-shadow: 0 1px 0 #2B2E35, 0 2px 0 #1F2228, 0 3px 0 #181A1F, 0 10px 22px rgba(0, 0, 0, 0.55);
+}
+
+@keyframes heroHeadlineReveal3D {
+  0% {
+    opacity: 0;
+    transform: translateY(22px) rotateX(-16deg) scale(0.96);
+    filter: blur(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) rotateX(0deg) scale(1);
+    filter: blur(0);
+  }
+}
+
+/* Modern 3D Text Highlight Accents */
+.highlight-3d-blueprint {
+  display: inline-block;
+  color: var(--blueprint);
+  position: relative;
+  font-weight: 700;
+  animation: floatText3D 3.5s ease-in-out infinite alternate;
+}
+
+.highlight-3d-blueprint::after {
+  content: "";
+  position: absolute;
+  bottom: 2px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--blueprint);
+  border-radius: 2px;
+  box-shadow: 0 2px 6px var(--blueprint);
+  opacity: 0.85;
+}
+
+@keyframes floatText3D {
+  0% { transform: translateY(0px) rotateX(0deg); }
+  100% { transform: translateY(-3px) rotateX(4deg); }
+}
+
+.highlight-3d-serif {
+  font-style: italic;
+  color: var(--ink);
+  border-bottom: 1.5px dashed var(--paper-line);
+  padding-bottom: 2px;
+}
+
 /* ---------- HERO & PRODUCT CONTROL ---------- */
 .hero { padding: 48px 0 36px; }
 .hero-grid { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 44px; align-items: center; }

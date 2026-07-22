@@ -191,11 +191,12 @@ const Home = () => {
           <div className="hero-grid">
             {/* Left Column: Specific Copy & Product Control */}
             <div>
-              <div className="eyebrow">
-                AI Property Scoring & Fraud Audit
+              <div className="eyebrow-3d-glow">
+                <span className="eyebrow-3d-dot" />
+                <span>AI Property Scoring & Fraud Audit</span>
               </div>
-              <h1>
-                Check the math on a home before you sign the lease
+              <h1 className="hero-headline-3d">
+                <span className="highlight-3d-blueprint">Check the math</span> on a home before you <span className="highlight-3d-serif">sign the lease</span>
               </h1>
               <p className="sub">
                 Skip fake photos, hidden broker cuts, and WhatsApp forwards. <b>AuraSpot</b> runs owner verification, market rent variance, and location risk before you visit.
