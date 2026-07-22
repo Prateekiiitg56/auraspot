@@ -275,7 +275,7 @@ const Home = () => {
               </div>
             </div>
 
-            {/* Right Column: Interactive 3D Perspective Tilt Card Stack */}
+            {/* Right Column: Physical Stamped Document Scene */}
             <div
               className="hero-card-stack-3d"
               onMouseMove={handleMouseMove3D}
@@ -285,8 +285,16 @@ const Home = () => {
                 transition: "transform 0.15s cubic-bezier(0.16, 1, 0.3, 1)"
               }}
             >
-              {/* Photo Preview Card with 3D Depth */}
-              <div className="card-3d-tilt card-sheen">
+              {/* Photo Preview Card with Physical Photo Border */}
+              <div
+                className="card-3d-tilt card-sheen"
+                style={{
+                  background: "#FFFFFF",
+                  padding: "8px 8px 12px 8px",
+                  borderRadius: "2px",
+                  boxShadow: "0 18px 35px -10px rgba(23, 26, 31, 0.35), 0 0 0 1px rgba(217, 211, 194, 0.6)"
+                }}
+              >
                 <div style={{ position: "relative" }}>
                   <img
                     src={properties.length > 0 && properties[0].images?.[0] 
@@ -300,9 +308,9 @@ const Home = () => {
                   </div>
                 </div>
 
-                <div style={{ padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--paper-subtle)" }}>
+                <div style={{ padding: "12px 14px 2px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#FFFFFF" }}>
                   <div>
-                    <div style={{ fontSize: "15px", fontWeight: 650, fontFamily: "var(--font-serif)", color: "var(--ink)" }}>Riverside Flat 2BHK</div>
+                    <div style={{ fontSize: "15px", fontWeight: 650, fontFamily: "var(--font-serif)", color: "#171A1F" }}>Riverside Flat 2BHK</div>
                     <div style={{ fontSize: "12px", color: "var(--ink-soft)" }}>Uzan Bazar, Guwahati</div>
                   </div>
                   <div className="mono" style={{ fontSize: "17px", fontWeight: 700, color: "var(--blueprint)" }}>
@@ -311,9 +319,24 @@ const Home = () => {
                 </div>
               </div>
 
-              {/* Elevated 3D Inspection Survey Grade Note */}
-              <div style={{ transform: "translateZ(25px)" }}>
-                <SurveyGrade score={87} gradeLabel="GRADE A · VERIFIED LOW RISK" />
+              {/* Stacked Dossier Survey Grade Document */}
+              <div style={{ transform: "translateZ(25px)", position: "relative" }}>
+                {/* Peeking Stacked Paper Layer */}
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    background: "var(--paper-subtle)",
+                    border: "1px solid var(--paper-line)",
+                    borderRadius: "var(--radius-sm)",
+                    transform: "rotate(-1.5deg) translate(-4px, 4px)",
+                    boxShadow: "0 2px 6px rgba(23,26,31,0.08)",
+                    zIndex: 1
+                  }}
+                />
+                <div style={{ position: "relative", zIndex: 2 }}>
+                  <SurveyGrade score={87} gradeLabel="GRADE A · VERIFIED LOW RISK" />
+                </div>
               </div>
             </div>
           </div>
