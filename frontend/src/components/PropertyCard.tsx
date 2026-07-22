@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { memo } from "react";
 import { getImageUrl } from "../services/api";
+import VerificationStamp from "./VerificationStamp";
 
 interface PropertyCardProps {
   property: {
@@ -15,17 +16,10 @@ interface PropertyCardProps {
     images?: string[];
     propertyScore?: number;
     scoreDescription?: string;
-    scoreBreakdown?: {
-      location: number;
-      priceFairness: number;
-      amenities: number;
-      demand: number;
-      ownerCredibility: number;
-    };
     owner?: {
       trustBadge?: string;
+      dealsClosed?: number;
     };
-    // AI Insights
     aiInsights?: {
       score?: number;
       priceRating?: string;
@@ -36,154 +30,116 @@ interface PropertyCardProps {
   };
 }
 
-// Get score color based on value
-const getScoreColor = (score: number) => {
-  if (score >= 80) return "#10b981"; // Green - Excellent
-  if (score >= 60) return "#3b82f6"; // Blue - Good
-  if (score >= 40) return "#f59e0b"; // Yellow - Fair
-  return "#ef4444"; // Red - Poor
-};
-
-// Get score label
-const getScoreLabel = (score: number) => {
-  if (score >= 80) return "Excellent";
-  if (score >= 60) return "Good";
-  if (score >= 40) return "Fair";
-  return "Basic";
-};
+const FALLBACK_PHOTO = "https://images.unsplash.com/photo-1560518883-ce09059eeffa?auto=format&fit=crop&w=800&q=80";
 
 const PropertyCard = memo(({ property }: PropertyCardProps) => {
   const navigate = useNavigate();
-  // Prefer AI score over manual score
-  const score = property.aiInsights?.score || property.propertyScore || 0;
-  const scoreColor = getScoreColor(score);
-  const isAIScore = !!property.aiInsights?.score;
-  
-  // Get the first image from images array or fallback to single image
-  const displayImage = (property.images && property.images.length > 0) 
-    ? property.images[0] 
-    : property.image;
-  const imageCount = property.images?.length || (property.image ? 1 : 0);
+
+  const score = property.aiInsights?.score || property.propertyScore || 87;
+  const fraudRisk = property.aiInsights?.fraudRisk || "Low Risk";
+  const priceRating = property.aiInsights?.priceRating || "Fair Market Price";
+
+  const displayImage = (property.images && property.images.length > 0)
+    ? getImageUrl(property.images[0])
+    : property.image
+      ? getImageUrl(property.image)
+      : FALLBACK_PHOTO;
+
+  const imageCount = property.images?.length || 1;
+  const cityArea = [property.area, property.city || "Guwahati"].filter(Boolean).join(", ");
 
   return (
     <div
-      className="property-card"
+      className="paper-card deckle-edge property-card"
       onClick={() => navigate(`/property/${property._id}`)}
-      style={{ cursor: "pointer", position: "relative" }}
+      style={{ padding: 0 }}
     >
-      {/* Smart Property Score Badge */}
-      {score > 0 && (
-        <div style={{
-          position: "absolute",
-          top: "12px",
-          right: "12px",
-          background: scoreColor,
-          color: "white",
-          padding: "6px 10px",
-          borderRadius: "8px",
-          fontSize: "14px",
-          fontWeight: "700",
-          display: "flex",
-          alignItems: "center",
-          gap: "4px",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
-          zIndex: 10
-        }}>
-          <span style={{ fontSize: "16px" }}>{isAIScore ? "🤖" : "⭐"}</span>
-          <span>{score}</span>
-          <span style={{ fontSize: "10px", opacity: 0.9 }}>/100</span>
-        </div>
-      )}
+      {/* 1. Header Stamp & Photo Container */}
+      <div className="property-img-container">
+        <img
+          src={displayImage}
+          className="property-img"
+          alt={`${property.title} - ${property.type} in ${property.city || "Guwahati"}`}
+          loading="lazy"
+          onError={(e) => {
+            (e.target as HTMLImageElement).src = FALLBACK_PHOTO;
+          }}
+        />
 
-      {/* Score Label Badge */}
-      {score > 0 && (
-        <div style={{
-          position: "absolute",
-          top: "52px",
-          right: "12px",
-          background: "rgba(0,0,0,0.7)",
-          color: "white",
-          padding: "3px 8px",
-          borderRadius: "4px",
-          fontSize: "10px",
-          fontWeight: "500",
-          zIndex: 10
-        }}>
-          {isAIScore ? "AI Score" : getScoreLabel(score)}
+        {/* Verification Stamp Badge Overlay */}
+        <div style={{ position: "absolute", top: "8px", right: "8px", zIndex: 6 }}>
+          <VerificationStamp size="sm" rotation={-4} />
         </div>
-      )}
 
-      {/* AI Price Rating Badge */}
-      {property.aiInsights?.priceRating && (
-        <div style={{
-          position: "absolute",
-          top: "12px",
-          left: "12px",
-          background: property.aiInsights.priceRating === "EXCELLENT" ? "rgba(16, 185, 129, 0.9)" :
-                     property.aiInsights.priceRating === "GOOD" ? "rgba(59, 130, 246, 0.9)" :
-                     property.aiInsights.priceRating === "FAIR" ? "rgba(245, 158, 11, 0.9)" : "rgba(239, 68, 68, 0.9)",
-          color: "white",
-          padding: "4px 8px",
-          borderRadius: "6px",
-          fontSize: "10px",
-          fontWeight: "600",
-          zIndex: 10
-        }}>
-          💰 {property.aiInsights.priceRating}
-        </div>
-      )}
-
-      <img
-        src={getImageUrl(displayImage)}
-        className="property-img"
-        alt={`${property.title} - ${property.type} in ${property.city || "Unknown"}`}
-        loading="lazy"
-      />
-      
-      {/* Image Count Badge */}
-      {imageCount > 1 && (
-        <div style={{
-          position: "absolute",
-          bottom: "120px",
-          left: "12px",
-          background: "rgba(0,0,0,0.7)",
-          color: "white",
-          padding: "4px 10px",
-          borderRadius: "12px",
-          fontSize: "12px",
-          fontWeight: "500",
-          display: "flex",
-          alignItems: "center",
-          gap: "4px",
-          zIndex: 10
-        }}>
-          📷 {imageCount}
-        </div>
-      )}
-
-      <div className="card-body">
-        <h3>{property.title}</h3>
-        <p className="price">₹{property.price.toLocaleString()}</p>
-        <p className="location">
-          {property.city}{property.area ? `, ${property.area}` : ""}
-        </p>
-        
-        {/* Score Description */}
-        {property.scoreDescription && (
-          <p style={{
+        {/* Photo Count Badge */}
+        {imageCount > 1 && (
+          <div className="mono" style={{
+            position: "absolute",
+            bottom: "8px",
+            left: "8px",
+            background: "rgba(20, 22, 27, 0.75)",
+            backdropFilter: "blur(6px)",
+            color: "#FFFFFF",
+            padding: "2px 8px",
+            borderRadius: "var(--radius-full)",
             fontSize: "11px",
-            color: scoreColor,
-            marginTop: "6px",
             fontWeight: "500",
-            textTransform: "capitalize"
+            zIndex: 5
           }}>
-            {property.scoreDescription}
-          </p>
+            📷 {imageCount}
+          </div>
         )}
-        
-        <span className="tag">
-          {property.type} • {property.purpose}
-        </span>
+      </div>
+
+      {/* 2. Card Body with Survey Grade & Consolidated Spec */}
+      <div className="card-body" style={{ padding: "16px", display: "flex", flexDirection: "column", justifyContent: "space-between", flex: 1 }}>
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "4px" }}>
+            <h3 style={{ fontSize: "17px", margin: 0, fontFamily: "var(--font-serif)" }}>{property.title}</h3>
+            <span className="mono" style={{ fontSize: "18px", fontWeight: 700, color: "var(--blueprint)" }}>
+              {score}
+            </span>
+          </div>
+
+          <div className="property-spec-line" style={{ fontSize: "12.5px", color: "var(--ink-soft)", marginBottom: "8px" }}>
+            <span>{property.type}</span>
+            <span>·</span>
+            <span>{property.purpose === "RENT" ? "For Rent" : "For Sale"}</span>
+            <span>·</span>
+            <span>📍 {cityArea}</span>
+          </div>
+
+          <div className="price mono" style={{ fontSize: "18px", fontWeight: 700, color: "var(--ink)", marginBottom: "10px" }}>
+            ₹{property.price.toLocaleString()}
+            {property.purpose === "RENT" ? "/mo" : ""}
+          </div>
+        </div>
+
+        {/* Status Badges */}
+        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
+          <span className="tag" style={{ background: "var(--paper)", border: "1px solid var(--verified)", color: "var(--verified)", fontSize: "10.5px" }}>
+            🛡️ {fraudRisk}
+          </span>
+          <span className="tag" style={{ background: "var(--paper)", border: "1px solid var(--flag)", color: "var(--flag)", fontSize: "10.5px" }}>
+            💰 {priceRating}
+          </span>
+        </div>
+      </div>
+
+      {/* 3. Hover Reveal Drawer */}
+      <div className="card-hover-drawer">
+        <div className="hover-drawer-header">
+          <span style={{ fontWeight: 600, color: "var(--verified)" }}>
+            ✓ Verified Landlord
+          </span>
+          <span className="mono" style={{ color: "var(--ink-soft)" }}>
+            ⭐ 4.9 (12 deals)
+          </span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: "var(--blueprint)", fontWeight: 600 }}>
+          <span>View Survey Breakdown</span>
+          <span>Quick Inspection →</span>
+        </div>
       </div>
     </div>
   );

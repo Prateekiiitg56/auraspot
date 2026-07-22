@@ -1,0 +1,205 @@
+/* Ledger & Blueprint Design System Tokens */
+:root {
+  /* Light Mode Tokens (Default Paper Ledger) */
+  --paper: #F5F3EC;
+  --paper-line: #D9D3C2;
+  --paper-subtle: #EFECE3;
+  --ink: #171A1F;
+  --ink-soft: #5B5A54;
+  --blueprint: #1F4B8F;
+  --blueprint-deep: #163868;
+  --brick: #B8532E;
+  --verified: #2E6B4F;
+  --flag: #A9791F;
+  --stamp-red: #9C2B2B; /* Reserved ONLY for the verification stamp */
+
+  /* Legacy variable mappings for complete backward compatibility */
+  --color-bg-app: var(--paper);
+  --color-bg-surface: var(--paper-subtle);
+  --color-bg-subtle: var(--paper);
+  --color-text-main: var(--ink);
+  --color-text-muted: var(--ink-soft);
+  --color-text-caption: var(--ink-soft);
+  --color-border: var(--paper-line);
+  --color-border-subtle: var(--paper-line);
+  --color-primary: var(--blueprint);
+  --color-primary-hover: var(--blueprint-deep);
+  --color-primary-bg: var(--paper-subtle);
+  --color-success: var(--verified);
+  --color-success-bg: var(--paper-subtle);
+  --color-success-border: var(--verified);
+  --color-warning: var(--flag);
+  --color-warning-bg: var(--paper-subtle);
+  --color-warning-border: var(--flag);
+  --color-danger: var(--brick);
+
+  /* Typography */
+  --font-serif: 'Newsreader', Georgia, serif;
+  --font-sans: 'IBM Plex Sans', -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+
+  /* Spacing Scale (4/8/12/16/24/32/48/64px) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* Border Radii (Restrained Paper/Deed Style) */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+
+  /* Elevation Shadows (Paper Layering) */
+  --shadow-paper: 0 1px 3px rgba(23, 26, 31, 0.06), 0 1px 2px rgba(23, 26, 31, 0.04);
+  --shadow-card: 0 3px 8px rgba(23, 26, 31, 0.08), 0 1px 2px rgba(23, 26, 31, 0.04);
+  --shadow-subtle: 0 1px 3px rgba(23, 26, 31, 0.06);
+  --shadow-hero: 0 10px 25px rgba(23, 26, 31, 0.1);
+  --shadow-blueprint: 0 4px 14px rgba(31, 75, 143, 0.2);
+}
+
+/* Dark Mode Tokens (Night Ledger - Inverted exact relationships) */
+body.dark-mode,
+[data-theme="dark"] {
+  --paper: #14161B;          /* near-black, slightly warm */
+  --paper-line: #2B2E35;     /* subtle hairlines */
+  --paper-subtle: #1C1F26;   /* elevated card surfaces */
+  --ink: #EDEAE0;            /* warm off-white */
+  --ink-soft: #9B9890;
+  --blueprint: #5B8FD9;      /* desaturated blueprint for dark bg */
+  --blueprint-deep: #7CA6E3; /* hover/lift on dark */
+  --brick: #D97A54;
+  --verified: #4E9B76;
+  --flag: #C9A24D;
+  --stamp-red: #D96A6A;      /* Reserved ONLY for verification stamp */
+
+  /* Legacy variable mappings for dark mode */
+  --color-bg-app: var(--paper);
+  --color-bg-surface: var(--paper-subtle);
+  --color-bg-subtle: var(--paper);
+  --color-text-main: var(--ink);
+  --color-text-muted: var(--ink-soft);
+  --color-text-caption: var(--ink-soft);
+  --color-border: var(--paper-line);
+  --color-border-subtle: var(--paper-line);
+  --color-primary: var(--blueprint);
+  --color-primary-hover: var(--blueprint-deep);
+  --color-primary-bg: var(--paper-subtle);
+  --color-success: var(--verified);
+  --color-success-bg: var(--paper-subtle);
+  --color-success-border: var(--verified);
+  --color-warning: var(--flag);
+  --color-warning-bg: var(--paper-subtle);
+  --color-warning-border: var(--flag);
+  --color-danger: var(--brick);
+
+  --shadow-paper: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-card: 0 3px 8px rgba(0, 0, 0, 0.4);
+  --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-hero: 0 10px 25px rgba(0, 0, 0, 0.5);
+}
+
+/* Global Reset & Base Typography */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14.5px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-serif);
+  color: var(--ink);
+  margin-top: 0;
+  font-weight: 600;
+}
+
+/* Hard Rule: ALL numbers render in IBM Plex Mono */
+.mono,
+[data-number],
+.price,
+.score-num,
+.stat-val,
+.date-val,
+.count-val {
+  font-family: var(--font-mono) !important;
+}
+
+/* Blueprint Button System */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 18px;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+
+.btn-blueprint, .btn-solid {
+  background-color: var(--blueprint);
+  color: #FFFFFF;
+  border-color: var(--blueprint);
+}
+.btn-blueprint:hover, .btn-solid:hover {
+  background-color: var(--blueprint-deep);
+  border-color: var(--blueprint-deep);
+  color: #FFFFFF;
+}
+
+.btn-paper, .btn-outline {
+  background-color: var(--paper);
+  color: var(--ink);
+  border-color: var(--paper-line);
+}
+.btn-paper:hover, .btn-outline:hover {
+  background-color: var(--paper-subtle);
+  border-color: var(--blueprint);
+  color: var(--blueprint);
+}
+
+/* Paper Card Treatment with Folded Corner / Deed Styling */
+.paper-card {
+  background: var(--paper-subtle);
+  border: 1px solid var(--paper-line);
+  border-radius: var(--radius-sm);
+  padding: 20px;
+  position: relative;
+  box-shadow: var(--shadow-paper);
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.paper-card.deckle-edge::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  border-width: 0 16px 16px 0;
+  border-style: solid;
+  border-color: var(--paper-line) var(--paper);
+  display: block;
+  width: 0;
+  box-shadow: -1px 1px 2px rgba(0, 0, 0, 0.15);
+}
