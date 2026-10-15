@@ -1,102 +1,121 @@
 const express = require("express");
+const multer = require("multer");
 const Property = require("../models/Property");
 const User = require("../models/User");
 const Notification = require("../models/Notification");
 const RentAgreement = require("../models/RentAgreement");
-const multer = require("multer");
+const Chat = require("../models/Chat");
+const Maintenance = require("../models/Maintenance");
 const { calculatePropertyScore, getScoreDescription, calculateTrustBadge } = require("../utils/scoreCalculator");
 const { calculateAIMatchScore, getAISuggestions } = require("../utils/aiMatchEngine");
 const aiService = require("../services/aiService");
-const { uploadImage, uploadMultipleImages } = require("../services/cloudinaryService");
+const { uploadMultipleImages, deleteImage } = require("../services/cloudinaryService");
+const { requireAuth, sameId } = require("../middleware/auth");
 
 const router = express.Router();
 
-/* ================= MULTER ================= */
+const PROPERTY_TYPES = ["ROOM", "PG", "HOSTEL", "FLAT", "HOME"];
+const PURPOSES = ["RENT", "SALE"];
+const FURNISHING = ["Furnished", "Semi-Furnished", "Unfurnished"];
+const MAX_IMAGES = 5;
+const OWNER_PUBLIC = "name email verified rating totalRatings successfulDeals trustBadge isGoogleLogin emailVerified phoneVerified";
 
-// Use memory storage for serverless (Vercel has read-only filesystem)
-const storage = multer.memoryStorage();
-
-const upload = multer({ 
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+// Memory storage: files are streamed to Cloudinary (serverless has a read-only filesystem)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: MAX_IMAGES },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) cb(null, true);
+    else cb(new multer.MulterError("LIMIT_UNEXPECTED_FILE", "Only image files are allowed"));
+  }
 });
+
+const text = (value, max) => (typeof value === "string" ? value.trim().slice(0, max) : "");
+const positiveNumber = (value) => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+};
+const coordinate = (value, limit) => {
+  const n = Number(value);
+  return value !== undefined && value !== "" && Number.isFinite(n) && Math.abs(n) <= limit ? n : undefined;
+};
+
+// Accepts a JSON array or a comma-separated string
+const parseAmenities = (raw) => {
+  if (Array.isArray(raw)) return raw.map((a) => String(a).trim()).filter(Boolean).slice(0, 30);
+  if (typeof raw !== "string" || !raw.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed.map((a) => String(a).trim()).filter(Boolean).slice(0, 30);
+  } catch {
+    // not JSON
+  }
+  return raw.split(",").map((a) => a.trim()).filter(Boolean).slice(0, 30);
+};
+
+const withScore = (prop) => {
+  const scoreResult = calculatePropertyScore(prop, prop.owner);
+  const obj = prop.toObject ? prop.toObject() : prop;
+  obj.propertyScore = scoreResult.totalScore;
+  obj.scoreBreakdown = scoreResult.breakdown;
+  obj.scoreDescription = getScoreDescription(scoreResult.totalScore, scoreResult.breakdown);
+  return obj;
+};
+
+const regenerateInsights = (property) => {
+  aiService.clearPropertyCache(String(property._id));
+  aiService
+    .generatePropertyInsights(property)
+    .then((insights) => insights && Property.findByIdAndUpdate(property._id, { aiInsights: insights }))
+    .catch((err) => console.error("[AI] Background insights error:", err.message));
+};
 
 /* ================= CREATE PROPERTY ================= */
 
-router.post("/", upload.array("images", 5), async (req, res) => {
+router.post("/", requireAuth, upload.array("images", MAX_IMAGES), async (req, res) => {
   try {
-    const owner = await User.findOne({ email: req.body.ownerEmail });
-    if (!owner) return res.status(400).json({ message: "Owner not found" });
+    const { type, purpose } = req.body;
+    const title = text(req.body.title, 120);
+    const city = text(req.body.city, 80);
+    const price = positiveNumber(req.body.price);
 
-    // Handle amenities - could be JSON array or comma-separated string
-    let amenities = [];
-    const rawAmenities = req.body.amenities || "";
-    
-    if (typeof rawAmenities === "string") {
-      // Try parsing as JSON first (for backward compatibility)
-      try {
-        const parsed = JSON.parse(rawAmenities);
-        if (Array.isArray(parsed)) {
-          amenities = parsed.map(a => String(a).trim()).filter(Boolean);
-        } else {
-          amenities = String(rawAmenities).split(",").map(a => a.trim()).filter(Boolean);
-        }
-      } catch {
-        // Not JSON, split by comma
-        amenities = String(rawAmenities).split(",").map(a => a.trim()).filter(Boolean);
-      }
-    } else if (Array.isArray(rawAmenities)) {
-      amenities = rawAmenities.map(a => String(a).trim()).filter(Boolean);
+    if (!title || !city || !price || !PROPERTY_TYPES.includes(type) || !PURPOSES.includes(purpose)) {
+      return res.status(400).json({ message: "Title, type, purpose, city and a valid price are required" });
     }
 
-    // Handle multiple images - upload to Cloudinary
-    const imageFiles = req.files || [];
     let imageUrls = [];
-    
-    if (imageFiles.length > 0) {
+    if (req.files?.length) {
       try {
-        // Upload images to Cloudinary and get URLs
-        imageUrls = await uploadMultipleImages(imageFiles, "auraspot/properties");
-        console.log(`[CLOUDINARY] Uploaded ${imageUrls.length} images`);
+        imageUrls = await uploadMultipleImages(req.files, "auraspot/properties");
       } catch (uploadError) {
         console.error("[CLOUDINARY] Upload error:", uploadError);
-        // Continue without images if upload fails
+        return res.status(502).json({ message: "Image upload failed. Please try again." });
       }
     }
 
     const property = await Property.create({
-      title: req.body.title,
-      type: req.body.type,
-      purpose: req.body.purpose,
-      price: Number(req.body.price),
-      city: req.body.city,
-      area: req.body.area,
-      latitude: Number(req.body.latitude),
-      longitude: Number(req.body.longitude),
-      amenities,
-      description: req.body.description,
+      title,
+      type,
+      purpose,
+      price,
+      city,
+      area: text(req.body.area, 120),
+      latitude: coordinate(req.body.latitude, 90),
+      longitude: coordinate(req.body.longitude, 180),
+      amenities: parseAmenities(req.body.amenities),
+      description: text(req.body.description, 3000),
       images: imageUrls,
-      image: imageUrls[0] || null, // Keep first image for backward compatibility
-      owner: owner._id,
+      image: imageUrls[0] || null,
+      owner: req.user._id,
       status: "AVAILABLE",
-      // Set listing type based on purpose
-      listingType: req.body.purpose?.toLowerCase() === "sale" ? "sale" : "rent",
-      bhk: req.body.bhk ? Number(req.body.bhk) : undefined,
-      sqft: req.body.sqft ? Number(req.body.sqft) : undefined,
-      furnishing: req.body.furnishing || "Unfurnished"
+      listingType: purpose === "SALE" ? "sale" : "rent",
+      bhk: positiveNumber(req.body.bhk),
+      sqft: positiveNumber(req.body.sqft),
+      furnishing: FURNISHING.includes(req.body.furnishing) ? req.body.furnishing : "Unfurnished"
     });
 
-    // Background AI insights generation (non-blocking)
-    aiService.generatePropertyInsights(property)
-      .then(insights => {
-        if (insights) {
-          Property.findByIdAndUpdate(property._id, { aiInsights: insights }).catch(console.error);
-          console.log(`[AI] Generated insights for property ${property._id}`);
-        }
-      })
-      .catch(err => console.error("[AI] Background insights error:", err));
-
-    res.json(property);
+    regenerateInsights(property);
+    res.status(201).json(property);
   } catch (err) {
     console.error("CREATE PROPERTY ERROR:", err);
     res.status(500).json({ message: "Failed to add property" });
@@ -109,46 +128,40 @@ router.get("/", async (req, res) => {
   try {
     const properties = await Property.find({ status: "AVAILABLE" })
       .sort({ createdAt: -1 })
-      .populate("owner", "name email verified rating successfulDeals trustBadge isGoogleLogin emailVerified phoneVerified");
+      .populate("owner", OWNER_PUBLIC);
 
-    // Calculate scores for all properties
-    const propertiesWithScores = properties.map(prop => {
-      const scoreResult = calculatePropertyScore(prop, prop.owner);
-      const propObj = prop.toObject();
-      propObj.propertyScore = scoreResult.totalScore;
-      propObj.scoreBreakdown = scoreResult.breakdown;
-      propObj.scoreDescription = getScoreDescription(scoreResult.totalScore, scoreResult.breakdown);
-      return propObj;
-    });
-
-    res.json(propertiesWithScores);
+    res.json(properties.map(withScore));
   } catch (err) {
     console.error("EXPLORE ERROR:", err);
     res.status(500).json({ message: "Failed to load properties" });
   }
 });
 
-router.get("/all", async (req, res) => {
-  try {
-    const properties = await Property.find()
-      .populate("owner", "name email")
-      .populate("assignedTo", "name email");
+/* ================= MY DEALS (properties rented/bought by the signed-in user) ================= */
 
-    res.json(properties);
+router.get("/mine/deals", requireAuth, async (req, res) => {
+  try {
+    const deals = await Property.find({
+      assignedTo: req.user._id,
+      status: { $in: ["BOOKED", "SOLD"] }
+    })
+      .sort({ updatedAt: -1 })
+      .populate("owner", "name email");
+
+    res.json(deals);
   } catch (err) {
-    console.error("GET ALL ERROR:", err);
-    res.status(500).json({ message: "Failed to load all properties" });
+    console.error("MY DEALS ERROR:", err);
+    res.status(500).json({ message: "Failed to load deals" });
   }
 });
-
 
 /* ================= OWNER LISTINGS ================= */
 
 router.get("/owner/:ownerId", async (req, res) => {
   try {
-    const properties = await Property.find({
-      owner: req.params.ownerId
-    }).sort({ createdAt: -1 });
+    const properties = await Property.find({ owner: req.params.ownerId })
+      .sort({ createdAt: -1 })
+      .populate("assignedTo", "name email");
 
     res.json(properties);
   } catch (err) {
@@ -157,59 +170,98 @@ router.get("/owner/:ownerId", async (req, res) => {
   }
 });
 
+/* ================= AI RENTAL MATCH ENGINE ================= */
+
+router.post("/ai-match", async (req, res) => {
+  try {
+    const { preferredLocation, budgetMin, budgetMax, purpose, propertyType, userProfile, requiredAmenities } = req.body;
+
+    const properties = await Property.find({ status: "AVAILABLE" }).populate(
+      "owner",
+      "name email verified rating successfulDeals trustBadge"
+    );
+
+    const preferences = {
+      preferredLocation: text(preferredLocation, 120),
+      budgetMin: Number(budgetMin) || 0,
+      budgetMax: Number(budgetMax) || Infinity,
+      purpose,
+      propertyType,
+      userProfile,
+      requiredAmenities: Array.isArray(requiredAmenities) ? requiredAmenities.slice(0, 30) : []
+    };
+
+    const scoredProperties = properties.map((prop) => {
+      const obj = withScore(prop);
+      obj.aiScore = calculateAIMatchScore(prop, preferences);
+      return obj;
+    });
+
+    res.json({
+      success: true,
+      totalProperties: scoredProperties.length,
+      suggestions: getAISuggestions(scoredProperties),
+      allMatches: scoredProperties.sort((a, b) => b.aiScore.totalScore - a.aiScore.totalScore)
+    });
+  } catch (err) {
+    console.error("AI MATCH ERROR:", err);
+    res.status(500).json({ message: "Failed to process AI matching" });
+  }
+});
+
 /* ================= PROPERTY DETAILS ================= */
 
 router.get("/:id", async (req, res) => {
   try {
-    const property = await Property.findById(req.params.id)
-      .populate("owner", "name email verified rating totalRatings successfulDeals trustBadge isGoogleLogin emailVerified phoneVerified")
+    const property = await Property.findByIdAndUpdate(req.params.id, { $inc: { viewCount: 1 } }, { new: true })
+      .populate("owner", OWNER_PUBLIC)
       .populate("assignedTo", "name email");
 
     if (!property) {
       return res.status(404).json({ message: "Property not found" });
     }
 
-    // Increment view count
-    property.viewCount = (property.viewCount || 0) + 1;
-    
-    // Calculate property score
-    const scoreResult = calculatePropertyScore(property, property.owner);
-    property.propertyScore = scoreResult.totalScore;
-    property.scoreBreakdown = scoreResult.breakdown;
-    
-    // Try to save, but don't fail if there's a validation error
-    try {
-      await property.save();
-    } catch (saveErr) {
-      // If save fails (e.g., aiInsights validation error), just log and continue
-      console.error("Property save warning:", saveErr.message);
-    }
-    
-    // Add score description to response
-    const propertyObj = property.toObject();
-    propertyObj.scoreDescription = getScoreDescription(scoreResult.totalScore, scoreResult.breakdown);
+    const obj = withScore(property);
+    // Cache the computed score for sorting/analytics without blocking the response
+    Property.updateOne(
+      { _id: property._id },
+      { propertyScore: obj.propertyScore, scoreBreakdown: obj.scoreBreakdown }
+    ).catch((err) => console.error("Score cache warning:", err.message));
 
-    res.json(propertyObj);
+    res.json(obj);
   } catch (err) {
+    if (err.name === "CastError") return res.status(404).json({ message: "Property not found" });
     console.error("PROPERTY DETAILS ERROR:", err);
     res.status(500).json({ message: "Failed to load property details" });
   }
 });
 
-/* ================= DELETE ================= */
+/* ================= DELETE (owner only) ================= */
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireAuth, async (req, res) => {
   try {
-    // Delete all notifications related to this property
-    await Notification.deleteMany({ property: req.params.id });
-    
-    // Delete all chat messages related to this property
-    const Chat = require("../models/Chat");
-    await Chat.deleteMany({ property: req.params.id });
-    
-    // Delete the property
-    await Property.findByIdAndDelete(req.params.id);
-    
+    const property = await Property.findById(req.params.id);
+    if (!property) {
+      return res.status(404).json({ message: "Property not found" });
+    }
+    if (!sameId(property.owner, req.user)) {
+      return res.status(403).json({ message: "You can only delete your own listings" });
+    }
+
+    const activeAgreement = await RentAgreement.exists({ property: property._id, status: "ACTIVE" });
+    if (activeAgreement) {
+      return res.status(400).json({ message: "End the active rent agreement before deleting this listing" });
+    }
+
+    await Promise.all([
+      Notification.deleteMany({ property: property._id }),
+      Chat.deleteMany({ property: property._id }),
+      Maintenance.deleteMany({ property: property._id }),
+      User.updateMany({ savedProperties: property._id }, { $pull: { savedProperties: property._id } }),
+      ...(property.images || []).map(deleteImage)
+    ]);
+    await property.deleteOne();
+
     res.json({ ok: true });
   } catch (err) {
     console.error("DELETE ERROR:", err);
@@ -217,165 +269,111 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
-/* ================= UPDATE PROPERTY ================= */
+/* ================= UPDATE PROPERTY (owner only) ================= */
 
-router.put("/:id", upload.array("images", 5), async (req, res) => {
+router.put("/:id", requireAuth, upload.array("images", MAX_IMAGES), async (req, res) => {
   try {
-    const property = await Property.findById(req.params.id).populate("owner");
-    
+    const property = await Property.findById(req.params.id);
     if (!property) {
       return res.status(404).json({ message: "Property not found" });
     }
-
-    // Verify ownership
-    const ownerEmail = req.body.ownerEmail;
-    if (property.owner.email !== ownerEmail) {
+    if (!sameId(property.owner, req.user)) {
       return res.status(403).json({ message: "You can only edit your own properties" });
     }
 
-    // Handle amenities - could be JSON array or comma-separated string
-    let amenities = property.amenities;
-    if (req.body.amenities !== undefined) {
-      const rawAmenities = req.body.amenities || "";
-      if (typeof rawAmenities === "string") {
-        try {
-          const parsed = JSON.parse(rawAmenities);
-          if (Array.isArray(parsed)) {
-            amenities = parsed.map(a => String(a).trim()).filter(Boolean);
-          } else {
-            amenities = String(rawAmenities).split(",").map(a => a.trim()).filter(Boolean);
-          }
-        } catch {
-          amenities = String(rawAmenities).split(",").map(a => a.trim()).filter(Boolean);
-        }
-      } else if (Array.isArray(rawAmenities)) {
-        amenities = rawAmenities.map(a => String(a).trim()).filter(Boolean);
+    const b = req.body;
+    if (b.type !== undefined && !PROPERTY_TYPES.includes(b.type)) {
+      return res.status(400).json({ message: "Invalid property type" });
+    }
+    if (b.purpose !== undefined && !PURPOSES.includes(b.purpose)) {
+      return res.status(400).json({ message: "Invalid purpose" });
+    }
+    if (b.price !== undefined && !positiveNumber(b.price)) {
+      return res.status(400).json({ message: "Enter a valid price" });
+    }
+
+    let images = property.images || [];
+    if (req.files?.length) {
+      try {
+        const newImageUrls = await uploadMultipleImages(req.files, "auraspot/properties");
+        images = [...images, ...newImageUrls].slice(0, MAX_IMAGES);
+      } catch (uploadError) {
+        console.error("[CLOUDINARY] Upload error:", uploadError);
+        return res.status(502).json({ message: "Image upload failed. Please try again." });
       }
     }
 
-    // Handle new images if uploaded - use Cloudinary
-    const imageFiles = req.files || [];
-    let images = property.images || [];
-    if (imageFiles.length > 0) {
-      // Upload new images to Cloudinary
-      const newImageUrls = await uploadMultipleImages(imageFiles, "auraspot/properties");
-      images = [...images, ...newImageUrls].slice(0, 5); // Keep max 5 images
-    }
-
-    // Update fields
-    const updateData = {
-      title: req.body.title || property.title,
-      type: req.body.type || property.type,
-      purpose: req.body.purpose || property.purpose,
-      price: req.body.price ? Number(req.body.price) : property.price,
-      city: req.body.city || property.city,
-      area: req.body.area || property.area,
-      description: req.body.description !== undefined ? req.body.description : property.description,
-      amenities,
+    const purpose = b.purpose || property.purpose;
+    Object.assign(property, {
+      title: text(b.title, 120) || property.title,
+      type: b.type || property.type,
+      purpose,
+      listingType: purpose === "SALE" ? "sale" : "rent",
+      price: positiveNumber(b.price) || property.price,
+      city: text(b.city, 80) || property.city,
+      area: b.area !== undefined ? text(b.area, 120) : property.area,
+      description: b.description !== undefined ? text(b.description, 3000) : property.description,
+      amenities: b.amenities !== undefined ? parseAmenities(b.amenities) : property.amenities,
       images,
       image: images[0] || property.image,
-      bhk: req.body.bhk ? Number(req.body.bhk) : property.bhk,
-      sqft: req.body.sqft ? Number(req.body.sqft) : property.sqft,
-      furnishing: req.body.furnishing || property.furnishing,
-      listingType: req.body.purpose?.toLowerCase() === "sale" ? "sale" : "rent"
-    };
+      bhk: b.bhk !== undefined ? positiveNumber(b.bhk) : property.bhk,
+      sqft: b.sqft !== undefined ? positiveNumber(b.sqft) : property.sqft,
+      furnishing: FURNISHING.includes(b.furnishing) ? b.furnishing : property.furnishing
+    });
 
-    // Only update coordinates if provided
-    if (req.body.latitude) updateData.latitude = Number(req.body.latitude);
-    if (req.body.longitude) updateData.longitude = Number(req.body.longitude);
+    const lat = coordinate(b.latitude, 90);
+    const lng = coordinate(b.longitude, 180);
+    if (lat !== undefined && lng !== undefined) {
+      property.latitude = lat;
+      property.longitude = lng;
+    }
 
-    const updatedProperty = await Property.findByIdAndUpdate(
-      req.params.id,
-      updateData,
-      { new: true }
-    ).populate("owner", "name email");
+    await property.save();
+    await property.populate("owner", "name email");
+    regenerateInsights(property);
 
-    // Clear AI cache and regenerate insights
-    aiService.clearPropertyCache(req.params.id);
-    aiService.generatePropertyInsights(updatedProperty)
-      .then(insights => {
-        if (insights) {
-          Property.findByIdAndUpdate(req.params.id, { aiInsights: insights }).catch(console.error);
-          console.log(`[AI] Regenerated insights for updated property ${req.params.id}`);
-        }
-      })
-      .catch(err => console.error("[AI] Background insights error:", err));
-
-    res.json(updatedProperty);
+    res.json(property);
   } catch (err) {
     console.error("UPDATE PROPERTY ERROR:", err);
     res.status(500).json({ message: "Failed to update property" });
   }
 });
 
-/* ================= RESET PROPERTY TO AVAILABLE (DEBUG) ================= */
+/* ================= SEND RENT/BUY REQUEST ================= */
 
-router.post("/:id/reset", async (req, res) => {
+router.post("/:id/request", requireAuth, async (req, res) => {
   try {
+    const user = req.user;
     const property = await Property.findById(req.params.id);
-    if (!property) {
-      return res.status(404).json({ message: "Property not found" });
-    }
-    
-    property.status = "AVAILABLE";
-    property.assignedTo = null;
-    await property.save();
-    
-    // Delete any notifications for this property
-    await Notification.deleteMany({ property: req.params.id });
-    
-    res.json({ ok: true, property });
-  } catch (err) {
-    console.error("RESET ERROR:", err);
-    res.status(500).json({ message: "Failed to reset property" });
-  }
-});
-
-/* ================= SEND REQUEST ================= */
-
-router.post("/:id/request", async (req, res) => {
-  try {
-    const user = await User.findOne({ email: req.body.email });
-    
-    if (!user) {
-      return res.status(400).json({ message: "User not found" });
-    }
-
-    const property = await Property.findById(req.params.id)
-      .populate("owner");
 
     if (!property) {
       return res.status(404).json({ message: "Property not found" });
     }
-
-    // Only block if property is actually BOOKED or SOLD (approved by owner)
+    if (sameId(property.owner, user)) {
+      return res.status(400).json({ message: "You cannot request your own listing" });
+    }
     if (property.status === "BOOKED" || property.status === "SOLD") {
       return res.status(400).json({ message: "Property is no longer available" });
     }
 
-    // Check if user already has a pending request for this property
-    const existingRequest = await Notification.findOne({
+    const existingRequest = await Notification.exists({
       from: user._id,
       property: property._id,
       action: { $in: ["RENT", "BUY"] }
     });
-
     if (existingRequest) {
       return res.status(400).json({ message: "You have already requested this property" });
     }
 
-    // Increment contact requests count (for analytics)
-    property.contactRequests = (property.contactRequests || 0) + 1;
-    // Keep status as AVAILABLE - property remains open for other requests
-    await property.save();
-
-    // Create notification for owner (this tracks the request)
+    await Property.updateOne({ _id: property._id }, { $inc: { contactRequests: 1 } });
     await Notification.create({
       from: user._id,
-      to: property.owner._id,
+      to: property.owner,
       property: property._id,
       action: property.purpose === "RENT" ? "RENT" : "BUY",
-      message: req.body.message || `${user.name || user.email} is interested in your ${property.type} for ${property.purpose}`
+      message:
+        text(req.body.message, 1000) ||
+        `${user.name || user.email} is interested in your ${property.type} for ${property.purpose.toLowerCase()}`
     });
 
     res.json({ ok: true });
@@ -385,165 +383,104 @@ router.post("/:id/request", async (req, res) => {
   }
 });
 
-/* ================= AI RENTAL MATCH ENGINE ================= */
+/* ================= OWNER ACCEPTS A REQUEST ================= */
 
-router.post("/ai-match", async (req, res) => {
+router.post("/:id/approve", requireAuth, async (req, res) => {
   try {
-    const { 
-      preferredLocation,
-      budgetMin,
-      budgetMax,
-      purpose,
-      propertyType,
-      userProfile,
-      requiredAmenities
-    } = req.body;
-
-    // Fetch all available properties
-    const properties = await Property.find({ status: "AVAILABLE" })
-      .populate("owner", "name email verified rating successfulDeals trustBadge");
-
-    // Calculate AI match scores for each property
-    const preferences = {
-      preferredLocation,
-      budgetMin: Number(budgetMin) || 0,
-      budgetMax: Number(budgetMax) || Infinity,
-      purpose,
-      propertyType,
-      userProfile,
-      requiredAmenities: requiredAmenities || []
-    };
-
-    const scoredProperties = properties.map(prop => {
-      const propObj = prop.toObject();
-      
-      // Calculate regular property score
-      const regularScore = calculatePropertyScore(prop, prop.owner);
-      propObj.propertyScore = regularScore.totalScore;
-      propObj.scoreBreakdown = regularScore.breakdown;
-      
-      // Calculate AI match score based on user preferences
-      const aiScore = calculateAIMatchScore(prop, preferences);
-      propObj.aiScore = aiScore;
-      
-      return propObj;
-    });
-
-    // Get categorized suggestions
-    const suggestions = getAISuggestions(scoredProperties);
-
-    res.json({
-      success: true,
-      totalProperties: scoredProperties.length,
-      suggestions,
-      allMatches: scoredProperties.sort((a, b) => b.aiScore.totalScore - a.aiScore.totalScore)
-    });
-
-  } catch (err) {
-    console.error("AI MATCH ERROR:", err);
-    res.status(500).json({ message: "Failed to process AI matching" });
-  }
-});
-
-/* ================= OWNER ACCEPTS ================= */
-
-router.post("/:id/approve", async (req, res) => {
-  try {
-    const { userId } = req.body; // The user being approved (from notification)
-    
+    const { userId } = req.body;
     if (!userId) {
       return res.status(400).json({ message: "User ID is required" });
     }
 
-    const property = await Property.findById(req.params.id)
-      .populate("owner");
-
+    const property = await Property.findById(req.params.id);
     if (!property) {
       return res.status(404).json({ message: "Property not found" });
     }
-
-    // Property must be AVAILABLE (multiple requests possible)
+    if (!sameId(property.owner, req.user)) {
+      return res.status(403).json({ message: "Only the owner can accept requests" });
+    }
     if (property.status === "BOOKED" || property.status === "SOLD") {
       return res.status(400).json({ message: "Property is already booked/sold" });
     }
 
-    const assignedUser = await User.findById(userId);
-    if (!assignedUser) {
+    const request = await Notification.exists({
+      from: userId,
+      to: req.user._id,
+      property: property._id,
+      action: { $in: ["RENT", "BUY"] }
+    });
+    if (!request) {
+      return res.status(404).json({ message: "This request no longer exists" });
+    }
+
+    const tenant = await User.findById(userId);
+    if (!tenant) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Update property status to SOLD or BOOKED and assign user
     property.status = property.purpose === "SALE" ? "SOLD" : "BOOKED";
-    property.assignedTo = assignedUser._id;
+    property.assignedTo = tenant._id;
     await property.save();
 
-    // Increment owner's successful deals and update trust badge
-    if (property.owner) {
-      const owner = await User.findById(property.owner._id);
-      if (owner) {
-        owner.successfulDeals = (owner.successfulDeals || 0) + 1;
-        owner.trustBadge = calculateTrustBadge(owner);
-        await owner.save();
+    const owner = req.user;
+    owner.successfulDeals = (owner.successfulDeals || 0) + 1;
+    owner.trustBadge = calculateTrustBadge(owner);
+    await owner.save();
+
+    const notifications = [
+      {
+        from: owner._id,
+        to: tenant._id,
+        property: property._id,
+        action: "ACCEPTED",
+        message: `Your request for ${property.title} has been accepted!`
       }
-    }
+    ];
 
-    // AUTO-CREATE RENT AGREEMENT for RENT properties
-    if (property.purpose === "RENT" && property.assignedTo && property.owner) {
-      try {
-        const startDate = new Date();
-        const nextPayment = new Date();
-        nextPayment.setMonth(nextPayment.getMonth() + 1);
-        nextPayment.setDate(Math.min(startDate.getDate(), 28));
+    if (property.purpose === "RENT") {
+      const startDate = new Date();
+      const cycleDay = Math.min(startDate.getDate(), 28);
+      const nextPayment = new Date(startDate.getFullYear(), startDate.getMonth() + 1, cycleDay);
 
-        await RentAgreement.create({
-          property: property._id,
-          owner: property.owner._id,
-          tenant: property.assignedTo._id,
-          rentAmount: property.price,
-          rentalStartDate: startDate,
-          nextPaymentDate: nextPayment,
-          paymentCycleDay: Math.min(startDate.getDate(), 28),
-          paymentStatus: "PENDING",
-          status: "ACTIVE"
-        });
-
-        // Notify tenant about rent agreement
-        await Notification.create({
-          from: property.owner._id,
-          to: property.assignedTo._id,
-          property: property._id,
-          action: "RENT_AGREEMENT_CREATED",
-          message: `Rent agreement created! Monthly rent: ₹${property.price}. First payment due: ${nextPayment.toLocaleDateString()}`
-        });
-      } catch (rentErr) {
-        // Silent fail for rent agreement creation
-      }
-    }
-
-    // Create notification to user that their request was accepted
-    if (property.assignedTo && property.owner) {
-      try {
-        await Notification.create({
-          from: property.owner._id,
-          to: property.assignedTo._id,
-          property: property._id,
-          action: "ACCEPTED",
-          message: `Your request for ${property.title} has been accepted!`
-        });
-      } catch (notifErr) {
-        // Silent fail for notification
-      }
-    }
-
-    // Delete ALL request notifications for this property
-    try {
-      await Notification.deleteMany({ 
-        property: req.params.id,
-        action: { $nin: ["ACCEPTED", "RENT_AGREEMENT_CREATED"] }
+      await RentAgreement.create({
+        property: property._id,
+        owner: owner._id,
+        tenant: tenant._id,
+        rentAmount: property.price,
+        rentalStartDate: startDate,
+        nextPaymentDate: nextPayment,
+        paymentCycleDay: cycleDay,
+        paymentStatus: "PENDING",
+        status: "ACTIVE"
       });
-    } catch (notifErr) {
-      // Silent fail for notification cleanup
+
+      notifications.push({
+        from: owner._id,
+        to: tenant._id,
+        property: property._id,
+        action: "RENT_AGREEMENT_CREATED",
+        message: `Rent agreement created. Monthly rent: ₹${property.price.toLocaleString("en-IN")}. First payment due ${nextPayment.toDateString()}`
+      });
     }
+
+    // Close all other open requests for this listing, informing the other requesters
+    const otherRequests = await Notification.find({
+      property: property._id,
+      action: { $in: ["RENT", "BUY"] },
+      from: { $ne: tenant._id }
+    });
+    for (const other of otherRequests) {
+      notifications.push({
+        from: owner._id,
+        to: other.from,
+        property: property._id,
+        action: "REJECTED",
+        message: `${property.title} is no longer available.`
+      });
+    }
+
+    await Notification.deleteMany({ property: property._id, action: { $in: ["RENT", "BUY"] } });
+    await Notification.create(notifications);
 
     res.json({ ok: true, property });
   } catch (err) {

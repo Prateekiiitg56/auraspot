@@ -1,22 +1,13 @@
-import { useEffect, useState, useRef } from "react";
-import { useNavigate } from "react-router-dom";
-import { API, getImageUrl } from "../services/api";
+import { useEffect, useState, useRef, useMemo } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { Search, MapPin, ShieldCheck, BarChart3, BadgeIndianRupee, ArrowRight, Check } from "lucide-react";
+import { apiFetch } from "../services/api";
 import PropertyCard from "../components/PropertyCard";
-import VerificationStamp from "../components/VerificationStamp";
 import SurveyGrade from "../components/SurveyGrade";
 
-type Property = {
-  _id: string;
-  title: string;
-  price: number;
-  city: string;
-  area: string;
-  type: string;
-  purpose: string;
-  image?: string;
-  images?: string[];
-  propertyScore?: number;
-};
+import type { PropertyCardData } from "../components/PropertyCard";
+
+type Property = PropertyCardData & { createdAt?: string };
 
 const AUTOCOMPLETE_LOCATIONS = [
   "Uzan Bazar, Guwahati",
@@ -27,7 +18,7 @@ const AUTOCOMPLETE_LOCATIONS = [
   "South Delhi"
 ];
 
-// Mock items for the browser mockup window
+// Illustrative listings for the product preview (labelled as an example in the UI)
 const MOCK_LISTINGS = [
   {
     name: "Riverside Flat",
@@ -40,7 +31,7 @@ const MOCK_LISTINGS = [
     priceRating: "Fair",
     suggestedRent: "₹18.2k",
     bullets: [
-      "Owner verified with government ID, 12 deals closed.",
+      "Owner identity verified, 12 completed deals on AuraSpot.",
       "Rent is within 4% of what similar flats nearby go for.",
       "Balcony, covered parking, and water supply confirmed on-site."
     ]
@@ -104,33 +95,7 @@ const Home = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchType, setSearchType] = useState("ALL");
   const [autocompleteOpen, setAutocompleteOpen] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
   const [selectedMock, setSelectedMock] = useState(MOCK_LISTINGS[0]);
-
-  // 3D Perspective Tilt State
-  const [tiltStyle, setTiltStyle] = useState({ transform: "perspective(1200px) rotateX(0deg) rotateY(0deg)" });
-
-  const handleMouseMove3D = (e: React.MouseEvent<HTMLDivElement>) => {
-    const card = e.currentTarget;
-    const rect = card.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const centerX = rect.width / 2;
-    const centerY = rect.height / 2;
-
-    const rotateX = ((y - centerY) / centerY) * -12;
-    const rotateY = ((x - centerX) / centerX) * 12;
-
-    setTiltStyle({
-      transform: `perspective(1200px) rotateX(${rotateX.toFixed(2)}deg) rotateY(${rotateY.toFixed(2)}deg) scale3d(1.02, 1.02, 1.02)`
-    });
-  };
-
-  const handleMouseLeave3D = () => {
-    setTiltStyle({
-      transform: "perspective(1200px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)"
-    });
-  };
 
   const searchBoxRef = useRef<HTMLDivElement>(null);
 
@@ -151,37 +116,31 @@ const Home = () => {
   }, []);
 
   const handleSearchSubmit = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    setIsSearching(true);
-    setTimeout(() => {
-      setIsSearching(false);
-      navigate(`/explore?search=${encodeURIComponent(searchQuery)}&type=${searchType}`);
-    }, 400);
+    e?.preventDefault();
+    const params = new URLSearchParams();
+    // "Locality, City" suggestions search on the locality part
+    const query = searchQuery.split(",")[0].trim();
+    if (query) params.set("search", query);
+    if (searchType !== "ALL") params.set("type", searchType);
+    navigate(`/explore${params.toString() ? `?${params}` : ""}`);
   };
 
   useEffect(() => {
-    fetch(`${API}/properties`)
-      .then(res => {
-        if (!res.ok) {
-          throw new Error(`Server returned status ${res.status}`);
-        }
-        return res.json();
-      })
-      .then(data => {
-        if (Array.isArray(data)) {
-          setProperties(data);
-        } else {
-          console.error("API response is not an array:", data);
-          setProperties([]);
-        }
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error("Error fetching properties:", err);
-        setProperties([]);
-        setLoading(false);
-      });
+    apiFetch("/properties")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setProperties(Array.isArray(data) ? data : []))
+      .catch(() => setProperties([]))
+      .finally(() => setLoading(false));
   }, []);
+
+  // Highest-scoring listings first
+  const featured = useMemo(
+    () =>
+      [...properties]
+        .sort((a, b) => (b.aiInsights?.score || b.propertyScore || 0) - (a.aiInsights?.score || a.propertyScore || 0))
+        .slice(0, 6),
+    [properties]
+  );
 
   return (
     <div>
@@ -193,32 +152,36 @@ const Home = () => {
             <div>
               <div className="eyebrow-3d-glow">
                 <span className="eyebrow-3d-dot" />
-                <span>AI Property Scoring & Fraud Audit</span>
+                <span>AI price scoring &amp; fraud checks</span>
               </div>
               <h1 className="hero-headline-3d">
                 <span className="highlight-3d-blueprint">Check the math</span> on a home before you <span className="highlight-3d-serif">sign the lease</span>
               </h1>
               <p className="sub">
-                Skip fake photos, hidden broker cuts, and WhatsApp forwards. <b>AuraSpot</b> runs owner verification, market rent variance, and location risk before you visit.
+                Skip fake photos, hidden broker cuts and WhatsApp forwards. <b>AuraSpot</b> scores every listing for price fairness, owner trust and fraud risk before you visit.
               </p>
 
               {/* Product Control Search Bar with Real Autocomplete */}
               <form onSubmit={handleSearchSubmit}>
                 <div className="search-box-container" ref={searchBoxRef}>
-                  <span style={{ fontSize: "14px", color: "var(--color-text-caption)" }}>🔍</span>
+                  <Search size={16} aria-hidden="true" style={{ color: "var(--ink-soft)", flex: "none" }} />
                   <input
                     className="search-input-field"
                     type="text"
-                    placeholder="Enter locality or city (e.g. Uzan Bazar)..."
+                    aria-label="Locality or city"
+                    autoComplete="off"
+                    placeholder="Locality or city, e.g. Uzan Bazar"
                     value={searchQuery}
                     onChange={(e) => {
                       setSearchQuery(e.target.value);
                       setAutocompleteOpen(true);
                     }}
                     onFocus={() => setAutocompleteOpen(true)}
+                    onKeyDown={(e) => e.key === "Escape" && setAutocompleteOpen(false)}
                   />
                   <select
                     className="search-type-select"
+                    aria-label="Property type"
                     value={searchType}
                     onChange={(e) => setSearchType(e.target.value)}
                   >
@@ -227,12 +190,8 @@ const Home = () => {
                     <option value="PG">PG / Hostel</option>
                     <option value="HOME">Houses</option>
                   </select>
-                  <button type="submit" className="hero-search-btn" disabled={isSearching}>
-                    {isSearching ? (
-                      <span className="ai-loading-spinner" style={{ width: "16px", height: "16px" }} />
-                    ) : (
-                      "Analyze"
-                    )}
+                  <button type="submit" className="hero-search-btn">
+                    Search
                   </button>
 
                   {/* Autocomplete Dropdown */}
@@ -246,7 +205,7 @@ const Home = () => {
                         textTransform: "uppercase",
                         letterSpacing: "0.05em"
                       }}>
-                        Popular Locations
+                        Popular localities
                       </div>
                       {filteredSuggestions.map((item, idx) => (
                         <button
@@ -258,8 +217,7 @@ const Home = () => {
                             setAutocompleteOpen(false);
                           }}
                         >
-                          <span>📍 {item}</span>
-                          <span style={{ fontSize: "11px", color: "var(--color-text-caption)" }}>Verified</span>
+                          <span className="inline-icon"><MapPin size={14} aria-hidden="true" /> {item}</span>
                         </button>
                       ))}
                     </div>
@@ -269,26 +227,18 @@ const Home = () => {
 
               {/* Credible Single Trust Signal */}
               <div className="trust-signal-bar">
-                <span>100% of listings scored across 5 risk signals before going live:</span>
-                <span className="trust-signal-chip">🛡️ Owner ID</span>
-                <span className="trust-signal-chip">📊 Rent Variance</span>
-                <span className="trust-signal-chip">⚡ 0% Broker Fee</span>
+                <span>Every listing is checked for:</span>
+                <span className="trust-signal-chip inline-icon"><ShieldCheck size={13} aria-hidden="true" /> Fraud signals</span>
+                <span className="trust-signal-chip inline-icon"><BarChart3 size={13} aria-hidden="true" /> Market rent</span>
+                <span className="trust-signal-chip inline-icon"><BadgeIndianRupee size={13} aria-hidden="true" /> No broker fee</span>
               </div>
             </div>
 
             {/* Right Column: Physical Stamped Document Scene */}
-            <div
-              className="hero-card-stack-3d"
-              onMouseMove={handleMouseMove3D}
-              onMouseLeave={handleMouseLeave3D}
-              style={{
-                ...tiltStyle,
-                transition: "transform 0.15s cubic-bezier(0.16, 1, 0.3, 1)"
-              }}
-            >
+            <div className="hero-card-stack-3d" aria-label="Example AuraSpot listing report">
               {/* Photo Preview Card with Physical Photo Border */}
               <div
-                className="card-3d-tilt card-sheen"
+                className="hero-photo-card"
                 style={{
                   background: "#FFFFFF",
                   padding: "8px 8px 12px 8px",
@@ -298,19 +248,16 @@ const Home = () => {
               >
                 <div style={{ position: "relative" }}>
                   <img
-                    src={properties.length > 0 && properties[0].images?.[0] 
-                      ? getImageUrl(properties[0].images[0])
-                      : "https://images.unsplash.com/photo-1560518883-ce09059eeffa?auto=format&fit=crop&w=800&q=80"}
-                    alt="AuraSpot Property Verification"
+                    src="https://images.unsplash.com/photo-1560518883-ce09059eeffa?auto=format&fit=crop&w=800&q=80"
+                    alt="Example listing photo"
+                    width={800}
+                    height={533}
                     className="photo-preview-img"
                   />
-                  <div className="stamp-3d-floating" style={{ position: "absolute", top: "14px", right: "14px", zIndex: 10 }}>
-                    <VerificationStamp size="md" rotation={-6} />
-                  </div>
                 </div>
-
                 <div style={{ padding: "12px 14px 2px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#FFFFFF" }}>
                   <div>
+                    <div style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: "#5B5A54", textTransform: "uppercase", letterSpacing: "0.06em" }}>Example report</div>
                     <div style={{ fontSize: "15px", fontWeight: 650, fontFamily: "var(--font-serif)", color: "#171A1F" }}>Riverside Flat 2BHK</div>
                     <div style={{ fontSize: "12px", color: "var(--ink-soft)" }}>Uzan Bazar, Guwahati</div>
                   </div>
@@ -321,7 +268,7 @@ const Home = () => {
               </div>
 
               {/* Stacked Dossier Survey Grade Document */}
-              <div style={{ transform: "translateZ(25px)", position: "relative" }}>
+              <div style={{ position: "relative" }}>
                 {/* Peeking Stacked Paper Layer */}
                 <div
                   style={{
@@ -336,7 +283,7 @@ const Home = () => {
                   }}
                 />
                 <div style={{ position: "relative", zIndex: 2 }}>
-                  <SurveyGrade score={87} gradeLabel="GRADE A · VERIFIED LOW RISK" />
+                  <SurveyGrade score={87} gradeLabel="GRADE A · LOW RISK" />
                 </div>
               </div>
             </div>
@@ -349,7 +296,7 @@ const Home = () => {
         <div className="wrap">
           <h2>How AuraSpot protects your deposit</h2>
           <p className="feature-subhead">
-            Every property is audited against 5 data sources before you pay a single rupee or schedule a visit.
+            Every listing is scored on five signals so you can spot overpriced or suspicious homes before you pay or visit.
           </p>
 
           <div className="feature-bento-grid">
@@ -357,12 +304,11 @@ const Home = () => {
             <div className="bento-hero-card">
               <div>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
-                  <span className="eyebrow" style={{ margin: 0 }}>Core Differentiator</span>
-                  <span className="mono" style={{ fontSize: "11px", color: "var(--color-text-caption)" }}>Live Inspection Engine v2.4</span>
+                  <span className="eyebrow" style={{ margin: 0 }}>AuraSpot score</span>
                 </div>
-                <div className="bento-card-title">AI-Powered Risk & Value Audit</div>
+                <div className="bento-card-title">Price, location and trust in one number</div>
                 <div className="bento-card-desc">
-                  Calculates 5 independent data points to protect you from overpriced leases. We analyze historical rent trends, owner ID credentials, and neighborhood amenities before listing.
+                  Each listing gets a 0–100 score from location, price fairness against city benchmarks, amenities, demand and owner credibility — with the reasoning shown, not hidden.
                 </div>
               </div>
 
@@ -405,12 +351,12 @@ const Home = () => {
               <div className="bento-side-card">
                 <div>
                   <div className="bento-card-header">
-                    <span style={{ fontSize: "18px" }}>🛡️</span>
-                    <span className="tag tag-green">Government ID Verified</span>
+                    <ShieldCheck size={20} aria-hidden="true" style={{ color: "var(--verified)" }} />
+                    <span className="tag tag-green">Owner trust badges</span>
                   </div>
-                  <div className="bento-card-title" style={{ fontSize: "17px" }}>Verified Landlords Only</div>
+                  <div className="bento-card-title" style={{ fontSize: "17px" }}>Know who you are dealing with</div>
                   <div className="bento-card-desc" style={{ fontSize: "13px" }}>
-                    Zero anonymous posts. Every landlord uploads government ID & property ownership proof before receiving inquiries.
+                    Owners earn badges by verifying their identity and phone, closing deals and collecting ratings from past tenants.
                   </div>
                 </div>
 
@@ -425,8 +371,8 @@ const Home = () => {
                   justifyContent: "space-between",
                   fontSize: "12px"
                 }}>
-                  <span style={{ color: "var(--color-success)", fontWeight: 600 }}>✓ Land Title & ID Matched</span>
-                  <span className="mono" style={{ fontSize: "11px", color: "var(--color-success)" }}>12 Deals Closed</span>
+                  <span className="inline-icon" style={{ color: "var(--color-success)", fontWeight: 600 }}><Check size={14} aria-hidden="true" /> Identity verified</span>
+                  <span className="mono" style={{ fontSize: "11px", color: "var(--color-success)" }}>4.8 ★ · 12 deals</span>
                 </div>
               </div>
 
@@ -434,10 +380,10 @@ const Home = () => {
               <div className="bento-side-card">
                 <div>
                   <div className="bento-card-header">
-                    <span style={{ fontSize: "18px" }}>📊</span>
-                    <span className="tag tag-amber">Market Rent Delta</span>
+                    <BarChart3 size={20} aria-hidden="true" style={{ color: "var(--flag)" }} />
+                    <span className="tag tag-amber">Market rent check</span>
                   </div>
-                  <div className="bento-card-title" style={{ fontSize: "17px" }}>Fair Market Valuation</div>
+                  <div className="bento-card-title" style={{ fontSize: "17px" }}>Fair market valuation</div>
                   <div className="bento-card-desc" style={{ fontSize: "13px" }}>
                     Know what neighboring flats actually rent for. AuraSpot flags listings priced &gt;10% above market average.
                   </div>
@@ -467,7 +413,7 @@ const Home = () => {
               <span className="mock-dot"></span>
               <span className="mock-dot"></span>
               <span className="mock-dot"></span>
-              <span className="path">auraspot.app/explore/guwahati/flats</span>
+              <span className="path">Example · flats in Guwahati</span>
             </div>
             <div className="mock-body">
               {/* Left Pane - Listings */}
@@ -478,6 +424,10 @@ const Home = () => {
                     key={idx}
                     className={`mock-row ${selectedMock.name === item.name ? "active" : ""}`}
                     onClick={() => setSelectedMock(item)}
+                    onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setSelectedMock(item)}
+                    role="button"
+                    tabIndex={0}
+                    aria-pressed={selectedMock.name === item.name}
                   >
                     <div>
                       <span className="name">{item.name}</span>
@@ -536,43 +486,34 @@ const Home = () => {
         </div>
       </section>
 
-      {/* 4. REAL FEATURED PROPERTIES FROM API */}
-      <section style={{ padding: "20px 0 80px" }}>
+      {/* 3. TOP-SCORED LIVE LISTINGS */}
+      <section className="home-featured">
         <div className="wrap">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "28px" }}>
+          <div className="section-head">
             <div>
-              <h2 style={{ marginBottom: "6px" }}>Featured Properties</h2>
-              <p style={{ color: "var(--color-text-muted)" }}>Explore verified live listings scored by AuraSpot AI</p>
+              <h2>Top-rated listings</h2>
+              <p>Live homes with the highest AuraSpot scores right now.</p>
             </div>
-            <button
-              className="btn btn-outline"
-              onClick={() => navigate("/explore")}
-            >
-              View all listings →
-            </button>
+            <Link to="/explore" className="btn btn-outline">
+              View all listings <ArrowRight size={16} aria-hidden="true" />
+            </Link>
           </div>
 
           {loading ? (
-            <div style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: "60px 0",
-              gap: "12px"
-            }}>
-              <div className="ai-loading-spinner" />
-              <span className="mono" style={{ color: "var(--color-text-muted)" }}>Loading properties...</span>
+            <div className="property-grid">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="skeleton" style={{ height: 340 }} />
+              ))}
             </div>
-          ) : properties.length === 0 ? (
-            <div className="card" style={{
-              padding: "60px 40px",
-              textAlign: "center"
-            }}>
-              <p style={{ margin: 0, color: "var(--color-text-muted)" }}>No properties found</p>
+          ) : featured.length === 0 ? (
+            <div className="paper-card empty-state">
+              <h3>No listings yet</h3>
+              <p>Be the first to list a property on AuraSpot.</p>
+              <Link to="/add" className="btn btn-solid">List a property</Link>
             </div>
           ) : (
             <div className="property-grid">
-              {properties.map(p => (
+              {featured.map((p) => (
                 <PropertyCard key={p._id} property={p} />
               ))}
             </div>

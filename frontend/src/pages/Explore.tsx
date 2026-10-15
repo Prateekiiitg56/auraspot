@@ -1,296 +1,217 @@
-import { useEffect, useState, useMemo } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
-import { API } from "../services/api";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { Plus, Search, SearchX, X } from "lucide-react";
+import { apiFetch } from "../services/api";
 import PropertyCard from "../components/PropertyCard";
+import type { PropertyCardData } from "../components/PropertyCard";
 
-type Property = {
-  _id: string;
-  title: string;
-  price: number;
-  city: string;
-  area: string;
-  type: string;
-  purpose: string;
-  image?: string;
-  images?: string[];
-  propertyScore?: number;
-  aiInsights?: {
-    score?: number;
-    priceRating?: string;
-    locationQuality?: string;
-    fraudRisk?: string;
-  };
-};
+type Property = PropertyCardData & { createdAt?: string; amenities?: string[] };
 
-const CITIES = ["All Cities", "Guwahati", "Bangalore", "Delhi", "Mumbai"];
+const TYPES = [
+  { value: "", label: "All types" },
+  { value: "FLAT", label: "Flats" },
+  { value: "HOME", label: "Houses" },
+  { value: "ROOM", label: "Rooms" },
+  { value: "PG", label: "PG / Hostel" }
+];
+
+const SORTS = [
+  { value: "", label: "Newest first" },
+  { value: "price-asc", label: "Price: low to high" },
+  { value: "price-desc", label: "Price: high to low" },
+  { value: "score", label: "Highest score" }
+];
+
+const scoreOf = (p: Property) => p.aiInsights?.score || p.propertyScore || 0;
 
 const Explore = () => {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
-
+  const [params, setParams] = useSearchParams();
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
-  // Filter States initialized from URL params
-  const [searchQuery, setSearchQuery] = useState(searchParams.get("search") || "");
-  const [selectedCity, setSelectedCity] = useState(searchParams.get("city") || "All Cities");
-  const [selectedType, setSelectedType] = useState(searchParams.get("type") || "ALL");
-  const [selectedPurpose, setSelectedPurpose] = useState(searchParams.get("purpose") || "ALL");
-  const [maxPrice, setMaxPrice] = useState<string>("");
+  // All filters live in the URL so results are shareable and the navbar city picker works here too
+  const search = params.get("search") || "";
+  const city = params.get("city") || "";
+  const type = params.get("type") || "";
+  const purpose = params.get("purpose") || "";
+  const maxPrice = params.get("max") || "";
+  const sort = params.get("sort") || "";
+
+  const setParam = (key: string, value: string) => {
+    const next = new URLSearchParams(params);
+    if (value && value !== "ALL") next.set(key, value);
+    else next.delete(key);
+    setParams(next, { replace: true });
+  };
 
   useEffect(() => {
-    setLoading(true);
-    fetch(`${API}/properties`)
+    let cancelled = false;
+    apiFetch("/properties")
       .then((res) => {
-        if (!res.ok) throw new Error(`Server returned status ${res.status}`);
+        if (!res.ok) throw new Error(String(res.status));
         return res.json();
       })
       .then((data) => {
-        if (Array.isArray(data)) {
-          setProperties(data);
-        } else {
-          setProperties([]);
-        }
-        setLoading(false);
+        if (cancelled) return;
+        setProperties(Array.isArray(data) ? data : []);
+        setError(false);
       })
-      .catch((err) => {
-        console.error("Error fetching properties:", err);
-        setProperties([]);
-        setLoading(false);
-      });
-  }, []);
+      .catch(() => !cancelled && setError(true))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
 
-  // Update URL search parameters when filters change
-  const handleFilterChange = (key: string, value: string) => {
-    const newParams = new URLSearchParams(searchParams);
-    if (value && value !== "ALL" && value !== "All Cities") {
-      newParams.set(key, value);
-    } else {
-      newParams.delete(key);
-    }
-    setSearchParams(newParams);
-  };
+  const cities = useMemo(
+    () => Array.from(new Set(properties.map((p) => p.city?.trim()).filter(Boolean) as string[])).sort(),
+    [properties]
+  );
 
-  // Filtered properties based on user inputs
-  const filteredProperties = useMemo(() => {
-    return properties.filter((p) => {
-      // Area / Locality Search
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
-        const matchesTitle = p.title.toLowerCase().includes(query);
-        const matchesArea = p.area?.toLowerCase().includes(query);
-        const matchesCity = p.city?.toLowerCase().includes(query);
-        if (!matchesTitle && !matchesArea && !matchesCity) return false;
-      }
-
-      // City Filter
-      if (selectedCity !== "All Cities" && p.city?.toLowerCase() !== selectedCity.toLowerCase()) {
-        return false;
-      }
-
-      // Type Filter
-      if (selectedType !== "ALL") {
-        if (selectedType === "PG" && p.type !== "PG" && p.type !== "HOSTEL") return false;
-        if (selectedType !== "PG" && p.type !== selectedType) return false;
-      }
-
-      // Purpose Filter
-      if (selectedPurpose !== "ALL" && p.purpose !== selectedPurpose) {
-        return false;
-      }
-
-      // Max Price Filter
-      if (maxPrice && p.price > Number(maxPrice)) {
-        return false;
-      }
-
+  const results = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const filtered = properties.filter((p) => {
+      if (q && ![p.title, p.area, p.city].some((f) => f?.toLowerCase().includes(q))) return false;
+      if (city && p.city?.toLowerCase() !== city.toLowerCase()) return false;
+      if (type === "PG" ? p.type !== "PG" && p.type !== "HOSTEL" : type && p.type !== type) return false;
+      if (purpose && p.purpose !== purpose) return false;
+      if (maxPrice && p.price > Number(maxPrice)) return false;
       return true;
     });
-  }, [properties, searchQuery, selectedCity, selectedType, selectedPurpose, maxPrice]);
+
+    const sorted = [...filtered];
+    if (sort === "price-asc") sorted.sort((a, b) => a.price - b.price);
+    else if (sort === "price-desc") sorted.sort((a, b) => b.price - a.price);
+    else if (sort === "score") sorted.sort((a, b) => scoreOf(b) - scoreOf(a));
+    return sorted;
+  }, [properties, search, city, type, purpose, maxPrice, sort]);
+
+  const hasFilters = !!(search || city || type || purpose || maxPrice);
 
   return (
-    <div className="wrap" style={{ padding: "40px 32px" }}>
-      {/* Page Header with Add Property CTA */}
-      <div style={{
-        marginBottom: "32px",
-        paddingBottom: "20px",
-        borderBottom: "1px solid var(--paper-line)",
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "flex-end",
-        flexWrap: "wrap",
-        gap: "16px"
-      }}>
+    <div className="wrap page-section">
+      <div className="page-header">
         <div>
-          <div className="mono" style={{ fontSize: "11px", color: "var(--blueprint)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-            Real Estate Area Explorer
-          </div>
-          <h1 style={{ fontSize: "32px", margin: "4px 0 6px" }}>
-            Explore Verified Property Listings
-          </h1>
-          <p style={{ fontSize: "15px", color: "var(--ink-soft)", margin: 0 }}>
-            Filter properties by locality, price, and property type with live AuraScore risk audits.
-          </p>
+          <p className="eyebrow">Explore</p>
+          <h1>{city ? `Homes in ${city}` : "Find your next home"}</h1>
+          <p>Every listing shows a price-fairness score and owner trust signals.</p>
         </div>
-
-        {/* Upload Own Property CTA */}
-        <button
-          className="btn btn-blueprint"
-          onClick={() => navigate("/add-property")}
-          style={{ padding: "10px 20px" }}
-        >
-          ➕ Post Your Property
-        </button>
+        <Link to="/add" className="btn btn-solid">
+          <Plus size={16} aria-hidden="true" /> List a property
+        </Link>
       </div>
 
-      {/* Filter Controls Bar */}
-      <div className="paper-card" style={{ padding: "20px", marginBottom: "32px" }}>
-        {/* Search Input Bar */}
-        <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr", gap: "12px", marginBottom: "16px" }}>
-          <div>
-            <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--ink-soft)", marginBottom: "4px", display: "block" }}>
-              Search Locality / Area
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. Uzan Bazar, Beltola, Indiranagar..."
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                handleFilterChange("search", e.target.value);
-              }}
-            />
+      <section className="paper-card filter-bar" aria-label="Filters">
+        <div className="filter-grid">
+          <div className="filter-search">
+            <label htmlFor="f-search">Locality or title</label>
+            <div className="input-with-icon">
+              <Search size={16} aria-hidden="true" />
+              <input
+                id="f-search"
+                type="text"
+                placeholder="e.g. Koramangala, Zoo Road"
+                value={search}
+                onChange={(e) => setParam("search", e.target.value)}
+              />
+            </div>
           </div>
-
           <div>
-            <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--ink-soft)", marginBottom: "4px", display: "block" }}>
-              Property Type
-            </label>
-            <select
-              value={selectedType}
-              onChange={(e) => {
-                setSelectedType(e.target.value);
-                handleFilterChange("type", e.target.value);
-              }}
-            >
-              <option value="ALL">All Types</option>
-              <option value="FLAT">Flats</option>
-              <option value="PG">PG / Hostel</option>
-              <option value="HOME">Houses</option>
+            <label htmlFor="f-city">City</label>
+            <select id="f-city" value={city} onChange={(e) => setParam("city", e.target.value)}>
+              <option value="">All cities</option>
+              {(city && !cities.includes(city) ? [city, ...cities] : cities).map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
             </select>
           </div>
-
           <div>
-            <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--ink-soft)", marginBottom: "4px", display: "block" }}>
-              Purpose
-            </label>
-            <select
-              value={selectedPurpose}
-              onChange={(e) => {
-                setSelectedPurpose(e.target.value);
-                handleFilterChange("purpose", e.target.value);
-              }}
-            >
-              <option value="ALL">All Purposes</option>
-              <option value="RENT">For Rent</option>
-              <option value="SALE">For Sale</option>
+            <label htmlFor="f-type">Type</label>
+            <select id="f-type" value={type} onChange={(e) => setParam("type", e.target.value)}>
+              {TYPES.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
             </select>
           </div>
-
           <div>
-            <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--ink-soft)", marginBottom: "4px", display: "block" }}>
-              Max Budget (₹)
-            </label>
+            <label htmlFor="f-purpose">Purpose</label>
+            <select id="f-purpose" value={purpose} onChange={(e) => setParam("purpose", e.target.value)}>
+              <option value="">Rent or buy</option>
+              <option value="RENT">For rent</option>
+              <option value="SALE">For sale</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="f-max">Max budget (₹)</label>
             <input
+              id="f-max"
               type="number"
-              placeholder="e.g. 25000"
+              min={0}
+              inputMode="numeric"
+              placeholder="Any"
               value={maxPrice}
-              onChange={(e) => setMaxPrice(e.target.value)}
+              onChange={(e) => setParam("max", e.target.value)}
             />
           </div>
         </div>
+      </section>
 
-        {/* City Filter Pills */}
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-          <span style={{ fontSize: "12.5px", fontWeight: 600, color: "var(--ink-soft)", marginRight: "4px" }}>
-            City:
-          </span>
-          {CITIES.map((city) => {
-            const active = selectedCity.toLowerCase() === city.toLowerCase();
-            return (
-              <button
-                key={city}
-                type="button"
-                className="tag"
-                style={{
-                  cursor: "pointer",
-                  padding: "5px 12px",
-                  fontSize: "12px",
-                  background: active ? "var(--blueprint)" : "var(--paper)",
-                  color: active ? "#FFFFFF" : "var(--ink)",
-                  borderColor: active ? "var(--blueprint)" : "var(--paper-line)"
-                }}
-                onClick={() => {
-                  setSelectedCity(city);
-                  handleFilterChange("city", city);
-                }}
-              >
-                📍 {city}
-              </button>
-            );
-          })}
-
-          {(searchQuery || selectedType !== "ALL" || selectedPurpose !== "ALL" || selectedCity !== "All Cities" || maxPrice) && (
-            <button
-              type="button"
-              className="btn btn-paper"
-              style={{ padding: "4px 10px", fontSize: "12px", marginLeft: "auto" }}
-              onClick={() => {
-                setSearchQuery("");
-                setSelectedCity("All Cities");
-                setSelectedType("ALL");
-                setSelectedPurpose("ALL");
-                setMaxPrice("");
-                setSearchParams(new URLSearchParams());
-              }}
-            >
-              Reset Filters
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Property Results List Grid */}
       {loading ? (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "80px 0", gap: "12px" }}>
-          <div className="ai-loading-spinner" />
-          <span className="mono" style={{ color: "var(--ink-soft)" }}>Loading area properties...</span>
+        <div className="property-grid">
+          {Array.from({ length: 6 }, (_, i) => (
+            <div key={i} className="skeleton" style={{ height: 340 }} />
+          ))}
         </div>
-      ) : filteredProperties.length === 0 ? (
-        <div className="paper-card" style={{ padding: "60px 40px", textAlign: "center" }}>
-          <div style={{ fontSize: "36px", marginBottom: "12px" }}>🔍</div>
-          <h3 style={{ fontSize: "20px", marginBottom: "8px" }}>No Matching Properties Found</h3>
-          <p style={{ color: "var(--ink-soft)", maxWidth: "440px", margin: "0 auto 24px", fontSize: "14px" }}>
-            Try expanding your search query or reset your locality filters. Alternatively, upload your own property to list it live on AuraSpot.
-          </p>
-          <button className="btn btn-blueprint" onClick={() => navigate("/add-property")}>
-            ➕ Upload Your Property Listing
+      ) : error ? (
+        <div className="paper-card empty-state">
+          <h3>Couldn’t load listings</h3>
+          <p>Check your connection and try again.</p>
+          <button className="btn btn-outline" onClick={() => { setLoading(true); setReloadKey((k) => k + 1); }}>
+            Retry
           </button>
         </div>
       ) : (
-        <div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-            <div className="mono" style={{ fontSize: "13px", color: "var(--ink-soft)", fontWeight: 600 }}>
-              Showing {filteredProperties.length} verified listings
+        <>
+          <div className="results-bar">
+            <p className="results-count" aria-live="polite">
+              {results.length} {results.length === 1 ? "listing" : "listings"}
+              {hasFilters && (
+                <button type="button" className="link-btn inline-icon" onClick={() => setParams(new URLSearchParams(sort ? { sort } : {}))}>
+                  <X size={14} aria-hidden="true" /> Clear filters
+                </button>
+              )}
+            </p>
+            <div className="sort-control">
+              <label htmlFor="f-sort">Sort by</label>
+              <select id="f-sort" value={sort} onChange={(e) => setParam("sort", e.target.value)}>
+                {SORTS.map((s) => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
+                ))}
+              </select>
             </div>
           </div>
 
-          <div className="property-grid">
-            {filteredProperties.map((p) => (
-              <PropertyCard key={p._id} property={p} />
-            ))}
-          </div>
-        </div>
+          {results.length === 0 ? (
+            <div className="paper-card empty-state">
+              <SearchX size={36} aria-hidden="true" />
+              <h3>No listings match these filters</h3>
+              <p>Try a different locality, widen your budget, or clear the filters.</p>
+              {hasFilters && (
+                <button className="btn btn-outline" onClick={() => setParams(new URLSearchParams())}>
+                  Clear filters
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="property-grid">
+              {results.map((p) => (
+                <PropertyCard key={p._id} property={p} />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

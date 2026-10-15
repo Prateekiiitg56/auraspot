@@ -1,365 +1,317 @@
-import React, { useState, useEffect, useRef } from "react";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { auth } from "../services/firebase";
-import { API } from "../services/api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { FormEvent } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { ArrowLeft, MessageSquare, Send, ExternalLink } from "lucide-react";
+import { apiFetch, apiJson, formatINR, getPropertyImage, readError } from "../services/api";
+import { useAuth } from "../context/AuthContext";
+import { toast } from "../components/Feedback";
 
-interface Message {
+type Person = { _id: string; name: string; email: string };
+type PropertySummary = {
   _id: string;
-  sender: {
-    _id: string;
-    name: string;
-    email: string;
-  };
-  receiver: {
-    _id: string;
-    name: string;
-    email: string;
-  };
-  property?: {
-    _id: string;
-    title: string;
-    location?: string;
-    city?: string;
-    area?: string;
-    price: number;
-    image?: string;
-  };
+  title: string;
+  city?: string;
+  area?: string;
+  price: number;
+  images?: string[];
+  image?: string;
+  owner?: Person | string;
+};
+type Message = {
+  _id: string;
+  sender: Person;
+  receiver: Person;
   message: string;
   read: boolean;
   createdAt: string;
-}
-
-interface ChatThread {
-  user: {
-    _id: string;
-    name: string;
-    email: string;
-  };
+};
+type Conversation = {
+  property: PropertySummary;
+  user: Person;
   lastMessage: string;
   lastMessageTime: string;
+  lastMessageMine: boolean;
   unreadCount: number;
-  messageCount: number;
-}
+};
 
 const QUICK_PROMPTS = [
-  "Is this property available for move-in next month?",
-  "Can I schedule an in-person visit this weekend?",
-  "What is the security deposit & maintenance cost?"
+  "Is this property still available?",
+  "Can I schedule a visit this weekend?",
+  "What is the security deposit and maintenance cost?"
 ];
 
-const Chat: React.FC = () => {
+const POLL_MS = 5000;
+
+const timeLabel = (iso: string) => {
+  const d = new Date(iso);
+  const sameDay = d.toDateString() === new Date().toDateString();
+  return sameDay
+    ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleDateString([], { day: "numeric", month: "short" });
+};
+
+const ownerOf = (p?: PropertySummary | null): Person | null =>
+  p?.owner && typeof p.owner === "object" ? p.owner : null;
+
+/**
+ * Unified inbox. /messages lists every conversation; /chat/:propertyId?with=email opens one.
+ * Tenants opening /chat/:propertyId without ?with= talk to the listing owner.
+ */
+const Chat = () => {
   const { propertyId } = useParams<{ propertyId: string }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { user, profile } = useAuth();
+  const myEmail = user?.email || "";
 
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [inboxLoading, setInboxLoading] = useState(true);
+  const [property, setProperty] = useState<PropertySummary | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [threads, setThreads] = useState<ChatThread[]>([]);
-  const [newMessage, setNewMessage] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [threadLoading, setThreadLoading] = useState(false);
+  const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-  const [otherUserEmail, setOtherUserEmail] = useState("");
-  const [propertyInfo, setPropertyInfo] = useState<any>(null);
-  const [selectedThread, setSelectedThread] = useState<string | null>(null);
-
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const currentUserEmail = auth.currentUser?.email || "";
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  useEffect(() => {
-    if (!auth.currentUser) {
-      navigate("/login");
-      return;
-    }
-
-    const userParam = searchParams.get("user") || searchParams.get("with");
-    if (userParam) {
-      setSelectedThread(userParam);
-      setOtherUserEmail(userParam);
-    }
-
-    if (propertyId) {
-      fetch(`${API}/properties/${propertyId}`)
-        .then((res) => res.json())
-        .then((data) => setPropertyInfo(data))
-        .catch((err) => console.error("Failed to load property", err));
-    }
-  }, [propertyId, searchParams, navigate]);
-
-  // Load threads & messages
-  useEffect(() => {
-    if (!currentUserEmail) return;
-
-    const fetchThreadsAndMessages = async () => {
-      try {
-        const token = await auth.currentUser?.getIdToken();
-
-        // Fetch thread list
-        const threadsRes = await fetch(`${API}/messages/threads?email=${encodeURIComponent(currentUserEmail)}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (threadsRes.ok) {
-          const threadData = await threadsRes.json();
-          setThreads(threadData);
-        }
-
-        // Fetch active messages if thread selected
-        if (otherUserEmail) {
-          let url = `${API}/messages/conversation?user1=${encodeURIComponent(currentUserEmail)}&user2=${encodeURIComponent(otherUserEmail)}`;
-          if (propertyId) url += `&propertyId=${propertyId}`;
-
-          const msgRes = await fetch(url, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-
-          if (msgRes.ok) {
-            const msgData = await msgRes.json();
-            setMessages(msgData);
-          }
-        }
-      } catch (err) {
-        console.error("Error fetching messages:", err);
-      } finally {
-        setLoading(false);
-      }
+    if (!propertyId) return;
+    let cancelled = false;
+    apiFetch(`/properties/${propertyId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => !cancelled && setProperty(data))
+      .catch(() => !cancelled && setProperty(null));
+    return () => {
+      cancelled = true;
     };
+  }, [propertyId]);
 
-    fetchThreadsAndMessages();
-    const interval = setInterval(fetchThreadsAndMessages, 4000);
-    return () => clearInterval(interval);
-  }, [currentUserEmail, otherUserEmail, propertyId]);
+  const owner = ownerOf(property);
+  const isOwner = !!owner && !!profile && owner._id === profile._id;
+  // Tenants always talk to the owner; owners pick the other person via ?with=
+  const otherEmail = searchParams.get("with") || (!isOwner && owner ? owner.email : "");
+  const activeConversation = useMemo(
+    () => conversations.find((c) => c.property._id === propertyId && c.user.email === otherEmail),
+    [conversations, propertyId, otherEmail]
+  );
+  const otherName = activeConversation?.user.name || (owner?.email === otherEmail ? owner.name : "") || otherEmail;
 
-  const handleSendMessage = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!newMessage.trim() || !otherUserEmail || sending) return;
-
-    setSending(true);
-
+  const loadInbox = useCallback(async () => {
     try {
-      const token = await auth.currentUser?.getIdToken();
-      const payload: any = {
-        senderEmail: currentUserEmail,
-        receiverEmail: otherUserEmail,
-        message: newMessage.trim()
-      };
+      const res = await apiFetch("/chat/inbox");
+      if (res.ok) setConversations(await res.json());
+    } catch {
+      // keep the last known list
+    } finally {
+      setInboxLoading(false);
+    }
+  }, []);
 
-      if (propertyId) payload.propertyId = propertyId;
-
-      const res = await fetch(`${API}/messages`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (res.ok) {
-        const sentMsg = await res.json();
-        setMessages((prev) => [...prev, sentMsg]);
-        setNewMessage("");
+  const loadThread = useCallback(async () => {
+    if (!propertyId || !otherEmail) return;
+    try {
+      const res = await apiFetch(`/chat/property/${propertyId}?otherUserEmail=${encodeURIComponent(otherEmail)}`);
+      if (!res.ok) return;
+      const data: Message[] = await res.json();
+      setMessages((prev) => (prev.length === data.length && prev.at(-1)?._id === data.at(-1)?._id ? prev : data));
+      if (data.some((m) => !m.read && m.receiver.email === myEmail)) {
+        apiJson(`/chat/read/${propertyId}`, "PUT", { otherUserEmail: otherEmail }).catch(() => undefined);
       }
+    } catch {
+      // transient network error; next poll retries
+    }
+  }, [propertyId, otherEmail, myEmail]);
+
+  // Load the open thread whenever the selection changes
+  useEffect(() => {
+    if (!propertyId || !otherEmail) return;
+    let cancelled = false;
+    const run = async () => {
+      setThreadLoading(true);
+      setMessages([]);
+      await loadThread();
+      if (!cancelled) setThreadLoading(false);
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [propertyId, otherEmail, loadThread]);
+
+  // Poll inbox and thread while the tab is visible
+  useEffect(() => {
+    loadInbox();
+    const id = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      loadInbox();
+      loadThread();
+    }, POLL_MS);
+    return () => clearInterval(id);
+  }, [loadInbox, loadThread]);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: "end" });
+  }, [messages.length]);
+
+  const send = async (e?: FormEvent) => {
+    e?.preventDefault();
+    const text = draft.trim();
+    if (!text || !propertyId || !otherEmail || sending) return;
+    setSending(true);
+    try {
+      const res = await apiJson("/chat", "POST", { propertyId, receiverEmail: otherEmail, message: text });
+      if (!res.ok) throw new Error(await readError(res, "Message not sent"));
+      const sent: Message = await res.json();
+      setMessages((prev) => [...prev, sent]);
+      setDraft("");
+      loadInbox();
     } catch (err) {
-      console.error("Failed to send message:", err);
+      toast.error(err instanceof Error ? err.message : "Message not sent");
     } finally {
       setSending(false);
     }
   };
 
+  const hasThread = !!propertyId && !!otherEmail;
+  const ownerWithoutRecipient = !!propertyId && isOwner && !otherEmail;
+  const shownProperty = propertyId ? property : null;
+
   return (
-    <div className="wrap" style={{ padding: "32px 24px" }}>
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "300px 1fr",
-        gap: "20px",
-        height: "calc(100vh - 170px)",
-        minHeight: "560px"
-      }}>
-        {/* Left Sidebar: Threads List */}
-        <div className="card" style={{ padding: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-          <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--color-border)", fontWeight: 650, fontSize: "16px" }}>
-            Direct Inquiries
-          </div>
-
-          <div style={{ flex: 1, overflowY: "auto", padding: "8px" }}>
-            {threads.length === 0 ? (
-              <div style={{ padding: "24px 16px", textTransform: "none", fontSize: "13px", color: "var(--color-text-muted)", textAlign: "center" }}>
-                No active conversations yet.
-              </div>
-            ) : (
-              threads.map((thread) => {
-                const isActive = selectedThread === thread.user.email;
-                return (
-                  <div
-                    key={thread.user.email}
-                    style={{
-                      padding: "12px 14px",
-                      borderRadius: "var(--radius-md)",
-                      background: isActive ? "var(--color-primary-bg)" : "transparent",
-                      border: isActive ? "1px solid var(--color-primary-border)" : "1px solid transparent",
-                      cursor: "pointer",
-                      marginBottom: "4px"
-                    }}
-                    onClick={() => {
-                      setSelectedThread(thread.user.email);
-                      setOtherUserEmail(thread.user.email);
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-                      <span style={{ fontWeight: 600, fontSize: "14px", color: isActive ? "var(--color-primary)" : "var(--color-text-main)" }}>
-                        {thread.user.name || thread.user.email.split("@")[0]}
-                      </span>
-                      <span className="mono" style={{ fontSize: "10.5px", color: "var(--color-text-caption)" }}>
-                        {thread.lastMessageTime ? new Date(thread.lastMessageTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ""}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: "12.5px", color: "var(--color-text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {thread.lastMessage}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-
-        {/* Right Active Conversation Pane */}
-        <div className="card" style={{ padding: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          {/* 1. Header with Property Context & Landlord Verification */}
-          <div className="chat-property-header">
-            <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-              <div style={{
-                width: "48px",
-                height: "48px",
-                borderRadius: "var(--radius-md)",
-                overflow: "hidden",
-                background: "var(--color-bg-subtle)",
-                border: "1px solid var(--color-border)",
-                flex: "none"
-              }}>
-                <img
-                  src={propertyInfo?.images?.[0] || propertyInfo?.image || "https://images.unsplash.com/photo-1560518883-ce09059eeffa?auto=format&fit=crop&w=300&q=80"}
-                  alt="Property context"
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                />
-              </div>
-              <div>
-                <div style={{ fontWeight: 650, fontSize: "15px", color: "var(--color-text-main)" }}>
-                  {propertyInfo?.title || "Direct Property Inquiry"}
-                </div>
-                <div style={{ fontSize: "12px", color: "var(--color-text-muted)", display: "flex", gap: "8px", alignItems: "center" }}>
-                  <span>📍 {propertyInfo?.area || "Guwahati"}</span>
-                  <span>·</span>
-                  <span className="mono" style={{ color: "var(--color-primary)", fontWeight: 600 }}>
-                    ₹{(propertyInfo?.price || 18500).toLocaleString()}/mo
-                  </span>
-                  <span>·</span>
-                  <span className="tag tag-green" style={{ fontSize: "10px", padding: "2px 6px" }}>
-                    ✓ Landlord Verified
-                  </span>
-                </div>
-              </div>
+    <div className="wrap page-section">
+      <div className={`chat-layout ${propertyId ? "has-thread" : ""}`}>
+        <aside className="paper-card chat-inbox" aria-label="Conversations">
+          <h1 className="chat-inbox-title">Messages</h1>
+          {inboxLoading ? (
+            <div className="chat-inbox-list">
+              {[0, 1, 2].map((i) => <div key={i} className="skeleton" style={{ height: 58, margin: 8 }} />)}
             </div>
-
-            {propertyId && (
-              <button
-                className="btn btn-outline"
-                style={{ fontSize: "12px", padding: "6px 12px" }}
-                onClick={() => navigate(`/property/${propertyId}`)}
-              >
-                View Listing →
-              </button>
-            )}
-          </div>
-
-          {/* 2. Chat Message Stream */}
-          <div style={{ flex: 1, padding: "20px 24px", overflowY: "auto" }}>
-            {loading ? (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "40px", gap: "10px" }}>
-                <div className="ai-loading-spinner" style={{ width: "20px", height: "20px" }} />
-                <span style={{ fontSize: "13px", color: "var(--color-text-muted)" }}>Loading message thread...</span>
-              </div>
-            ) : messages.length === 0 ? (
-              /* 3. Designed Empty State with Quick Prompt Chips */
-              <div className="chat-empty-state">
-                <div style={{ fontSize: "36px", marginBottom: "12px" }}>💬</div>
-                <h3 style={{ fontSize: "18px", marginBottom: "6px" }}>Direct Message Landlord</h3>
-                <p style={{ fontSize: "14px", color: "var(--color-text-muted)", maxWidth: "420px", margin: "0 0 24px" }}>
-                  Ask about lease terms, schedule an in-person tour, or clarify deposit details directly with the verified owner.
-                </p>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: "10px", width: "100%", maxWidth: "460px" }}>
-                  <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-caption)", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "left" }}>
-                    Quick Inquiry Prompts
-                  </div>
-                  {QUICK_PROMPTS.map((prompt, idx) => (
-                    <button
-                      key={idx}
-                      className="prompt-chip"
-                      onClick={() => setNewMessage(prompt)}
-                      style={{ textAlign: "left" }}
-                    >
-                      " {prompt} "
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              messages.map((msg) => {
-                const isSent = msg.sender.email === currentUserEmail;
-                const senderInitial = (msg.sender.name || msg.sender.email)[0].toUpperCase();
-                const formattedTime = msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "10:42 AM";
-
+          ) : conversations.length === 0 ? (
+            <p className="chat-inbox-empty">No conversations yet. Message an owner from any listing page.</p>
+          ) : (
+            <ul className="chat-inbox-list">
+              {conversations.map((c) => {
+                const active = c.property._id === propertyId && c.user.email === otherEmail;
                 return (
-                  <div key={msg._id} className={`chat-message-row ${isSent ? "sent" : "received"}`}>
-                    <div className="chat-avatar">{senderInitial}</div>
-                    <div className="chat-bubble">
-                      <div>{msg.message}</div>
-                      <div className="chat-meta-bar">
-                        <span>{formattedTime}</span>
-                        {isSent && <span style={{ color: msg.read ? "#818cf8" : "inherit" }}>✓✓</span>}
-                      </div>
+                  <li key={`${c.property._id}-${c.user._id}`}>
+                    <button
+                      className={`chat-thread ${active ? "active" : ""}`}
+                      onClick={() => navigate(`/chat/${c.property._id}?with=${encodeURIComponent(c.user.email)}`)}
+                      aria-current={active}
+                    >
+                      <img src={getPropertyImage(c.property)} alt="" />
+                      <span className="chat-thread-body">
+                        <span className="chat-thread-top">
+                          <strong>{c.user.name || c.user.email}</strong>
+                          <time className="mono">{timeLabel(c.lastMessageTime)}</time>
+                        </span>
+                        <span className="chat-thread-property">{c.property.title}</span>
+                        <span className={`chat-thread-preview ${c.unreadCount ? "unread" : ""}`}>
+                          {c.lastMessageMine ? "You: " : ""}
+                          {c.lastMessage}
+                        </span>
+                      </span>
+                      {c.unreadCount > 0 && (
+                        <span className="count-badge static" aria-label={`${c.unreadCount} unread`}>{c.unreadCount}</span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </aside>
+
+        <section className="paper-card chat-pane" aria-label="Conversation">
+          {!propertyId ? (
+            <div className="empty-state" style={{ flex: 1 }}>
+              <MessageSquare size={36} aria-hidden="true" />
+              <h3>Select a conversation</h3>
+              <p>Choose a conversation on the left, or open a listing and message its owner.</p>
+              <Link to="/explore" className="btn btn-outline">Browse listings</Link>
+            </div>
+          ) : (
+            <>
+              <header className="chat-property-header">
+                <button className="icon-btn chat-back" onClick={() => navigate("/messages")} aria-label="Back to conversations">
+                  <ArrowLeft size={18} />
+                </button>
+                <img src={getPropertyImage(shownProperty)} alt="" className="chat-header-img" />
+                <div className="chat-header-text">
+                  <strong>{hasThread ? otherName : shownProperty?.title || "Conversation"}</strong>
+                  <span className="muted">
+                    {shownProperty ? `${shownProperty.title} · ${formatINR(shownProperty.price)}` : "Loading listing…"}
+                  </span>
+                </div>
+                <Link to={`/property/${propertyId}`} className="btn btn-outline btn-sm">
+                  View listing <ExternalLink size={14} aria-hidden="true" />
+                </Link>
+              </header>
+
+              <div className="chat-stream" aria-live="polite">
+                {ownerWithoutRecipient ? (
+                  <div className="empty-state">
+                    <h3>This is your listing</h3>
+                    <p>Pick a conversation from the list to reply to an interested renter or buyer.</p>
+                  </div>
+                ) : threadLoading ? (
+                  <div className="page-loader" style={{ minHeight: 200 }}><div className="ai-loading-spinner" /></div>
+                ) : messages.length === 0 ? (
+                  <div className="chat-empty-state">
+                    <MessageSquare size={32} aria-hidden="true" />
+                    <h3>Start the conversation</h3>
+                    <p>Ask about availability, visits or deposit terms.</p>
+                    <div className="prompt-list">
+                      {QUICK_PROMPTS.map((prompt) => (
+                        <button key={prompt} className="prompt-chip" onClick={() => setDraft(prompt)}>
+                          {prompt}
+                        </button>
+                      ))}
                     </div>
                   </div>
-                );
-              })
-            )}
-            <div ref={messagesEndRef} />
-          </div>
+                ) : (
+                  messages.map((m) => {
+                    const mine = m.sender.email === myEmail;
+                    return (
+                      <div key={m._id} className={`chat-message-row ${mine ? "sent" : "received"}`}>
+                        <div className="chat-bubble">
+                          <div className="chat-text">{m.message}</div>
+                          <div className="chat-meta-bar">
+                            <time>{timeLabel(m.createdAt)}</time>
+                            {mine && <span>{m.read ? "Seen" : "Sent"}</span>}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+                <div ref={endRef} />
+              </div>
 
-          {/* 4. Input Area with Toolbar Affordances */}
-          <form onSubmit={handleSendMessage} className="chat-input-bar">
-            <button type="button" className="chat-attach-btn" title="Attach Document / Image">
-              📎
-            </button>
-            <button type="button" className="chat-attach-btn" title="Add Emoji">
-              😊
-            </button>
-
-            <input
-              type="text"
-              placeholder="Type your message to the owner..."
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              style={{ flex: 1 }}
-            />
-
-            <button
-              type="submit"
-              className="btn btn-solid"
-              disabled={!newMessage.trim() || sending}
-              style={{ opacity: !newMessage.trim() ? 0.6 : 1 }}
-            >
-              {sending ? "Sending..." : "Send ➔"}
-            </button>
-          </form>
-        </div>
+              {hasThread && (
+                <form onSubmit={send} className="chat-input-bar">
+                  <label htmlFor="chat-input" className="visually-hidden">Message</label>
+                  <textarea
+                    id="chat-input"
+                    rows={1}
+                    maxLength={2000}
+                    placeholder={`Message ${otherName || "owner"}…`}
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        send();
+                      }
+                    }}
+                  />
+                  <button type="submit" className="btn btn-solid" disabled={!draft.trim() || sending} aria-label="Send message">
+                    <Send size={16} aria-hidden="true" />
+                    <span className="chat-send-label">{sending ? "Sending…" : "Send"}</span>
+                  </button>
+                </form>
+              )}
+            </>
+          )}
+        </section>
       </div>
     </div>
   );

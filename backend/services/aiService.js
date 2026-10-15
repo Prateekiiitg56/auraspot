@@ -44,7 +44,8 @@ async function callDeepSeek(prompt, systemPrompt, cacheKey = null) {
         ],
         temperature: 0.7,
         max_tokens: 1500
-      })
+      }),
+      signal: AbortSignal.timeout(25000)
     });
 
     if (!response.ok) {
@@ -58,6 +59,8 @@ async function callDeepSeek(prompt, systemPrompt, cacheKey = null) {
 
     // Cache the response
     if (cacheKey) {
+      // Bound memory use: evict the oldest entry once the cache is full
+      if (responseCache.size >= 500) responseCache.delete(responseCache.keys().next().value);
       responseCache.set(cacheKey, {
         response: result,
         timestamp: Date.now()
@@ -67,7 +70,7 @@ async function callDeepSeek(prompt, systemPrompt, cacheKey = null) {
 
     return result;
   } catch (error) {
-    console.error("[AI] Error calling DeepSeek:", error);
+    console.error("[AI] Error calling DeepSeek:", error.message);
     throw error;
   }
 }
@@ -319,52 +322,6 @@ Respond with ONLY this JSON:
 }
 
 /**
- * Smart User-Property Matching
- * Matches users to suitable properties
- */
-async function matchUserToProperties(userProfile, properties) {
-  const cacheKey = `match_${userProfile.email}_${properties.length}`;
-  
-  const systemPrompt = `You are a smart property matching assistant.
-Match users to properties based on their needs, budget, and preferences.
-Always respond with ONLY valid JSON.`;
-
-  const propertyList = properties.slice(0, 10).map((p, i) => 
-    `${i + 1}. ${p.title} | ${p.type} | ${p.city} | ₹${p.price} | ${p.bhk || ""}BHK`
-  ).join("\n");
-
-  const prompt = `Match this user to the best properties:
-
-User Profile:
-- Type: ${userProfile.userType || "general"} (student/professional/family)
-- Budget: ₹${userProfile.budget?.min || 0} - ₹${userProfile.budget?.max || "unlimited"}
-- Preferred Location: ${userProfile.preferredCity || "Any"}
-- Looking for: ${userProfile.lookingFor || "rent"}
-- Preferences: ${userProfile.preferences?.join(", ") || "None specified"}
-
-Available Properties:
-${propertyList}
-
-Rank the top 5 best matches with reasons.
-
-Respond with ONLY this JSON:
-{
-  "matches": [
-    {
-      "rank": 1,
-      "propertyIndex": <index from list>,
-      "matchScore": <0-100>,
-      "reason": "<why this matches>"
-    }
-  ],
-  "suggestion": "<overall suggestion for user>"
-}`;
-
-  const response = await callDeepSeek(prompt, systemPrompt, cacheKey);
-  return parseAIResponse(response);
-}
-
-/**
  * Smart Rent Suggestion
  * Suggests optimal rent price
  */
@@ -398,49 +355,6 @@ Respond with ONLY this JSON:
   "currentPriceAssessment": "<UNDERPRICED|FAIR|OVERPRICED>",
   "marketInsight": "<brief market insight>",
   "negotiationTip": "<tip for renters>"
-}`;
-
-  const response = await callDeepSeek(prompt, systemPrompt, cacheKey);
-  return parseAIResponse(response);
-}
-
-/**
- * Maintenance Priority Prediction
- * For smart maintenance system
- */
-async function predictMaintenancePriority(request) {
-  const cacheKey = `maint_priority_${request._id}`;
-  
-  const systemPrompt = `You are a property maintenance expert.
-Analyze maintenance requests and predict urgency and cost.
-Always respond with ONLY valid JSON.`;
-
-  const prompt = `Analyze this maintenance request:
-
-Request:
-- Category: ${request.category}
-- Title: ${request.title}
-- Description: ${request.description}
-- Reported: ${new Date(request.createdAt).toLocaleDateString()}
-- Current Status: ${request.status}
-
-Predict:
-1. Urgency level
-2. Estimated resolution time
-3. Approximate cost range
-4. Recommended action
-
-Respond with ONLY this JSON:
-{
-  "urgency": "<CRITICAL|HIGH|MEDIUM|LOW>",
-  "estimatedDays": <number>,
-  "costRange": {
-    "min": <number in INR>,
-    "max": <number in INR>
-  },
-  "recommendation": "<recommended action>",
-  "safetyRisk": <true/false>,
-  "canDIY": <true/false>
 }`;
 
   const response = await callDeepSeek(prompt, systemPrompt, cacheKey);
@@ -486,9 +400,9 @@ ${historyText ? `**Previous Chat:**\n${historyText}\n` : ""}
 
 Provide a helpful, specific response. Keep it under 200 words.`;
 
-  // No caching for chat (dynamic)
+  // No caching for chat (dynamic); strip reasoning traces some models emit
   const response = await callDeepSeek(prompt, systemPrompt);
-  return response;
+  return response.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 }
 
 /**
@@ -517,7 +431,7 @@ async function generatePropertyInsights(property) {
       generatedAt: new Date()
     };
   } catch (error) {
-    console.error("[AI] Error generating insights:", error);
+    console.error("[AI] Error generating insights:", error.message);
     return null;
   }
 }
@@ -536,24 +450,11 @@ function clearPropertyCache(propertyId) {
   console.log(`[AI] Cleared ${keysToDelete.length} cached entries for property ${propertyId}`);
 }
 
-/**
- * Get cache stats
- */
-function getCacheStats() {
-  return {
-    entries: responseCache.size,
-    keys: Array.from(responseCache.keys())
-  };
-}
-
 module.exports = {
   generatePropertyScore,
   calculateFraudRisk,
-  matchUserToProperties,
   suggestRentPrice,
-  predictMaintenancePriority,
   propertyChat,
   generatePropertyInsights,
-  clearPropertyCache,
-  getCacheStats
+  clearPropertyCache
 };

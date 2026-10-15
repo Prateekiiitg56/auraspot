@@ -15,11 +15,11 @@ interface SurveyGradeProps {
 }
 
 const DEFAULT_FACTORS: FactorAnnotation[] = [
-  { label: "Price Variance", weight: "25%", note: "Within 2.4% of neighborhood registry avg", status: "verified" },
-  { label: "Owner Credibility", weight: "15%", note: "Govt ID & Land Title Deed matched", status: "verified" },
+  { label: "Price Variance", weight: "25%", note: "Within 2.4% of the area average", status: "verified" },
+  { label: "Owner Credibility", weight: "15%", note: "Identity and phone verified", status: "verified" },
   { label: "Location Risk", weight: "25%", note: "Low flood risk zone · High transit connectivity", status: "verified" },
-  { label: "Demand Index", weight: "15%", note: "14 verified inquiries this week", status: "flag" },
-  { label: "Amenity Audit", weight: "20%", note: "On-site verified: Power backup & parking", status: "verified" }
+  { label: "Demand Index", weight: "15%", note: "14 enquiries this week", status: "flag" },
+  { label: "Amenity Audit", weight: "20%", note: "Power backup & parking listed", status: "verified" }
 ];
 
 const SurveyGrade: React.FC<SurveyGradeProps> = ({

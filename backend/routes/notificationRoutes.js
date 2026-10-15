@@ -1,121 +1,55 @@
 const router = require("express").Router();
 const Notification = require("../models/Notification");
-const User = require("../models/User");
+const { requireAuth, requireSelfEmail, sameId } = require("../middleware/auth");
 
+router.use(requireAuth);
 
-/* ================= CREATE REQUEST ================= */
-
-router.post("/", async (req, res) => {
-  try {
-    const { from, ownerId, propertyId, action, message } = req.body;
-
-    if (!from || !ownerId || !propertyId)
-      return res.status(400).json({ message: "Missing data" });
-
-    const fromUser = await User.findOne({ email: from });
-    const toUser = await User.findById(ownerId);
-
-    if (!fromUser || !toUser)
-      return res.status(404).json({ message: "User not found" });
-
-    const notif = await Notification.create({
-      from: fromUser._id,
-      to: toUser._id,
-      property: propertyId,
-      action,
-      message: message || ""
-    });
-
-    res.status(201).json(notif);
-  } catch (err) {
-    console.error("NOTIFICATION CREATE ERROR:", err);
-    res.status(500).json({ message: "Failed to create notification" });
-  }
-});
-
-
-/* ================= OWNER INBOX ================= */
+/* ================= OWNER INBOX: open rent/buy requests ================= */
 
 router.get("/owner/:ownerId", async (req, res) => {
   try {
-    const notes = await Notification.find({
-      to: req.params.ownerId,
-      action: { $in: ["RENT", "BUY"] } // Only show rent/buy requests
-    })
+    if (!sameId(req.params.ownerId, req.user)) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    const notes = await Notification.find({ to: req.user._id, action: { $in: ["RENT", "BUY"] } })
       .populate("from", "name email")
       .populate("property", "title price status owner assignedTo")
       .sort({ createdAt: -1 });
 
-    // Filter out notifications where property is null or already BOOKED/SOLD
-    const activeNotes = notes.filter(
-      note => note.property && note.property.status !== "BOOKED" && note.property.status !== "SOLD"
-    );
-
-    res.json(activeNotes);
+    // Hide requests for deleted or already booked/sold listings
+    res.json(notes.filter((n) => n.property && !["BOOKED", "SOLD"].includes(n.property.status)));
   } catch (err) {
     console.error("LOAD OWNER NOTES ERROR:", err);
     res.status(500).json({ message: "Failed loading notifications" });
   }
 });
 
+/* ================= HAS THE SIGNED-IN USER REQUESTED THIS PROPERTY ================= */
 
-/* ================= CHECK IF USER ALREADY REQUESTED ================= */
-
-router.get("/check-request/:propertyId/:email", async (req, res) => {
+router.get("/check-request/:propertyId/:email", requireSelfEmail(), async (req, res) => {
   try {
-    const user = await User.findOne({ email: req.params.email });
-    if (!user) {
-      return res.json({ hasRequested: false });
-    }
-
-    const existingRequest = await Notification.findOne({
-      from: user._id,
+    const existingRequest = await Notification.exists({
+      from: req.user._id,
       property: req.params.propertyId,
       action: { $in: ["RENT", "BUY"] }
     });
-
     res.json({ hasRequested: !!existingRequest });
   } catch (err) {
     console.error("CHECK REQUEST ERROR:", err);
-    res.json({ hasRequested: false });
+    res.status(500).json({ message: "Failed to check request" });
   }
 });
 
+/* ================= ALL NOTIFICATIONS FOR THE SIGNED-IN USER ================= */
 
-/* ================= SENDER HISTORY ================= */
-
-router.get("/sender/:userId", async (req, res) => {
+router.get("/user/:email", requireSelfEmail(), async (req, res) => {
   try {
-    const notes = await Notification.find({
-      from: req.params.userId
-    })
-      .populate("to", "name email")
-      .populate("property", "title price status")
-      .sort({ createdAt: -1 });
-
-    res.json(notes);
-  } catch (err) {
-    console.error("LOAD SENDER NOTES ERROR:", err);
-    res.status(500).json({ message: "Failed loading notifications" });
-  }
-});
-
-/* ================= USER NOTIFICATIONS (INCLUDING ACCEPTANCES) ================= */
-
-router.get("/user/:userEmail", async (req, res) => {
-  try {
-    const user = await User.findOne({ email: req.params.userEmail });
-    
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    const notes = await Notification.find({
-      to: user._id
-    })
+    const notes = await Notification.find({ to: req.user._id })
       .populate("from", "name email")
-      .populate("property")
-      .sort({ createdAt: -1 });
+      .populate("property", "title price status images image city area")
+      .sort({ createdAt: -1 })
+      .limit(200);
 
     res.json(notes);
   } catch (err) {
@@ -124,87 +58,67 @@ router.get("/user/:userEmail", async (req, res) => {
   }
 });
 
-/* ================= CLEANUP ORPHANED NOTIFICATIONS ================= */
+/* ================= UNREAD COUNT (navbar badge) ================= */
 
-router.delete("/cleanup/orphaned", async (req, res) => {
+router.get("/unread-count", async (req, res) => {
   try {
-    const Property = require("../models/Property");
-    
-    // Get all notifications
-    const allNotifications = await Notification.find({});
-    
-    let deletedCount = 0;
-    
-    for (const notif of allNotifications) {
-      if (notif.property) {
-        // Check if property still exists
-        const propertyExists = await Property.findById(notif.property);
-        if (!propertyExists) {
-          await Notification.findByIdAndDelete(notif._id);
-          deletedCount++;
-        }
-      } else {
-        // No property reference, delete it
-        await Notification.findByIdAndDelete(notif._id);
-        deletedCount++;
-      }
-    }
-    
-    res.json({ 
-      message: `Cleanup complete. Deleted ${deletedCount} orphaned notifications.`,
-      deletedCount 
-    });
+    const count = await Notification.countDocuments({ to: req.user._id, read: { $ne: true } });
+    res.json({ count });
   } catch (err) {
-    console.error("CLEANUP ERROR:", err);
-    res.status(500).json({ message: "Failed to cleanup notifications" });
+    console.error("UNREAD COUNT ERROR:", err);
+    res.status(500).json({ message: "Failed to load unread count" });
   }
 });
 
-/* ================= DELETE SINGLE NOTIFICATION ================= */
+router.put("/read-all", async (req, res) => {
+  try {
+    await Notification.updateMany({ to: req.user._id, read: { $ne: true } }, { read: true });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("MARK READ ERROR:", err);
+    res.status(500).json({ message: "Failed to mark notifications as read" });
+  }
+});
+
+/* ================= DELETE ONE (recipient only) ================= */
 
 router.delete("/:id", async (req, res) => {
   try {
-    const notification = await Notification.findById(req.params.id);
-    
-    if (!notification) {
+    const result = await Notification.deleteOne({ _id: req.params.id, to: req.user._id });
+    if (!result.deletedCount) {
       return res.status(404).json({ message: "Notification not found" });
     }
-
-    await Notification.findByIdAndDelete(req.params.id);
-    
-    res.json({ message: "Notification deleted successfully" });
+    res.json({ message: "Notification deleted" });
   } catch (err) {
     console.error("DELETE NOTIFICATION ERROR:", err);
     res.status(500).json({ message: "Failed to delete notification" });
   }
 });
 
-/* ================= REJECT REQUEST ================= */
+/* ================= OWNER REJECTS A REQUEST ================= */
 
 router.post("/reject/:notificationId", async (req, res) => {
   try {
-    const notification = await Notification.findById(req.params.notificationId)
-      .populate("from", "name email")
-      .populate("to", "name email")
-      .populate("property", "title");
-    
+    const notification = await Notification.findOne({
+      _id: req.params.notificationId,
+      to: req.user._id,
+      action: { $in: ["RENT", "BUY"] }
+    }).populate("property", "title");
+
     if (!notification) {
-      return res.status(404).json({ message: "Notification not found" });
+      return res.status(404).json({ message: "Request not found" });
     }
 
-    // Create rejection notification for the requester
     await Notification.create({
-      from: notification.to._id, // Owner
-      to: notification.from._id, // Requester
-      property: notification.property._id,
+      from: req.user._id,
+      to: notification.from,
+      property: notification.property?._id,
       action: "REJECTED",
       message: `Your request for ${notification.property?.title || "the property"} has been declined by the owner.`
     });
+    await notification.deleteOne();
 
-    // Delete the original request notification
-    await Notification.findByIdAndDelete(req.params.notificationId);
-    
-    res.json({ message: "Request rejected successfully" });
+    res.json({ message: "Request rejected" });
   } catch (err) {
     console.error("REJECT REQUEST ERROR:", err);
     res.status(500).json({ message: "Failed to reject request" });

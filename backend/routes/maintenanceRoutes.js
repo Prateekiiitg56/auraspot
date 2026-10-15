@@ -1,84 +1,89 @@
 const express = require("express");
-const router = express.Router();
 const Maintenance = require("../models/Maintenance");
-const User = require("../models/User");
 const Property = require("../models/Property");
 const Notification = require("../models/Notification");
+const { requireAuth, requireSelfEmail, sameId } = require("../middleware/auth");
 
-// Create maintenance request (tenant only)
+const router = express.Router();
+router.use(requireAuth);
+
+const CATEGORIES = ["PLUMBING", "ELECTRICAL", "APPLIANCE", "HVAC", "STRUCTURAL", "PEST_CONTROL", "CLEANING", "OTHER"];
+const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"];
+const STATUSES = ["PENDING", "APPROVED", "IN_PROGRESS", "RESOLVED", "REJECTED"];
+const STATUS_LABEL = {
+  PENDING: "Pending",
+  APPROVED: "Approved",
+  IN_PROGRESS: "In progress",
+  RESOLVED: "Resolved",
+  REJECTED: "Rejected"
+};
+
+const text = (value, max) => (typeof value === "string" ? value.trim().slice(0, max) : "");
+
+const populated = (id) =>
+  Maintenance.findById(id)
+    .populate("property", "title city area image images")
+    .populate("tenant", "name email phone")
+    .populate("owner", "name email phone")
+    .populate("updates.by", "name email");
+
+/* ================= CREATE (tenant of the property) ================= */
+
 router.post("/", async (req, res) => {
   try {
-    const { propertyId, tenantEmail, category, title, description, priority, images } = req.body;
+    const { propertyId, category } = req.body;
+    const title = text(req.body.title, 100);
+    const description = text(req.body.description, 1000);
+    const priority = PRIORITIES.includes(req.body.priority) ? req.body.priority : "MEDIUM";
 
-    if (!propertyId || !tenantEmail || !category || !title || !description) {
-      return res.status(400).json({ message: "All fields are required" });
+    if (!propertyId || !CATEGORIES.includes(category) || !title || !description) {
+      return res.status(400).json({ message: "Category, title and description are required" });
     }
 
-    const tenant = await User.findOne({ email: tenantEmail });
-    if (!tenant) {
-      return res.status(404).json({ message: "Tenant not found" });
-    }
-
-    const property = await Property.findById(propertyId).populate("owner");
+    const tenant = req.user;
+    const property = await Property.findById(propertyId);
     if (!property) {
       return res.status(404).json({ message: "Property not found" });
     }
-
-    // Verify tenant is assigned to this property
-    if (!property.assignedTo || property.assignedTo.toString() !== tenant._id.toString()) {
+    if (!sameId(property.assignedTo, tenant)) {
       return res.status(403).json({ message: "You are not a tenant of this property" });
     }
 
     const maintenance = await Maintenance.create({
-      property: propertyId,
+      property: property._id,
       tenant: tenant._id,
-      owner: property.owner._id,
+      owner: property.owner,
       category,
       title,
       description,
-      priority: priority || "MEDIUM",
-      images: images || [],
-      updates: [{
-        message: `Maintenance request created: ${title}`,
-        by: tenant._id,
-        role: "TENANT"
-      }]
+      priority,
+      updates: [{ message: `Request created: ${title}`, by: tenant._id, role: "TENANT" }]
     });
 
-    // Notify owner
     await Notification.create({
       from: tenant._id,
-      to: property.owner._id,
-      property: propertyId,
+      to: property.owner,
+      property: property._id,
       action: "MAINTENANCE_REQUEST",
-      message: `New maintenance request: ${title} - ${category} (${priority || "MEDIUM"} priority)`
+      message: `New maintenance request: ${title} (${priority.toLowerCase()} priority)`
     });
 
-    const populated = await Maintenance.findById(maintenance._id)
-      .populate("property", "title city area image")
-      .populate("tenant", "name email")
-      .populate("owner", "name email");
-
-    res.status(201).json(populated);
+    res.status(201).json(await populated(maintenance._id));
   } catch (err) {
     console.error("CREATE MAINTENANCE ERROR:", err);
     res.status(500).json({ message: "Failed to create maintenance request" });
   }
 });
 
-// Get all maintenance requests for a tenant
-router.get("/tenant/:email", async (req, res) => {
+/* ================= LISTS ================= */
+
+router.get("/tenant/:email", requireSelfEmail(), async (req, res) => {
   try {
-    const tenant = await User.findOne({ email: req.params.email });
-    if (!tenant) {
-      return res.status(404).json({ message: "Tenant not found" });
-    }
-
-    const requests = await Maintenance.find({ tenant: tenant._id })
-      .populate("property", "title city area image")
+    const requests = await Maintenance.find({ tenant: req.user._id })
+      .populate("property", "title city area image images")
       .populate("owner", "name email phone")
+      .populate("updates.by", "name email")
       .sort({ createdAt: -1 });
-
     res.json(requests);
   } catch (err) {
     console.error("GET TENANT MAINTENANCE ERROR:", err);
@@ -86,19 +91,13 @@ router.get("/tenant/:email", async (req, res) => {
   }
 });
 
-// Get all maintenance requests for an owner
-router.get("/owner/:email", async (req, res) => {
+router.get("/owner/:email", requireSelfEmail(), async (req, res) => {
   try {
-    const owner = await User.findOne({ email: req.params.email });
-    if (!owner) {
-      return res.status(404).json({ message: "Owner not found" });
-    }
-
-    const requests = await Maintenance.find({ owner: owner._id })
-      .populate("property", "title city area image")
+    const requests = await Maintenance.find({ owner: req.user._id })
+      .populate("property", "title city area image images")
       .populate("tenant", "name email phone")
+      .populate("updates.by", "name email")
       .sort({ createdAt: -1 });
-
     res.json(requests);
   } catch (err) {
     console.error("GET OWNER MAINTENANCE ERROR:", err);
@@ -106,14 +105,23 @@ router.get("/owner/:email", async (req, res) => {
   }
 });
 
-// Get maintenance requests for a specific property
+// Visible to the property's owner and its current tenant only
 router.get("/property/:propertyId", async (req, res) => {
   try {
-    const requests = await Maintenance.find({ property: req.params.propertyId })
+    const property = await Property.findById(req.params.propertyId).select("owner assignedTo");
+    if (!property) return res.json([]);
+
+    const isOwner = sameId(property.owner, req.user);
+    const filter = { property: property._id };
+    if (!isOwner) {
+      if (!sameId(property.assignedTo, req.user)) return res.json([]);
+      filter.tenant = req.user._id;
+    }
+
+    const requests = await Maintenance.find(filter)
       .populate("tenant", "name email")
       .populate("owner", "name email")
       .sort({ createdAt: -1 });
-
     res.json(requests);
   } catch (err) {
     console.error("GET PROPERTY MAINTENANCE ERROR:", err);
@@ -121,19 +129,31 @@ router.get("/property/:propertyId", async (req, res) => {
   }
 });
 
-// Get single maintenance request
+router.get("/stats/:email", requireSelfEmail(), async (req, res) => {
+  try {
+    const group = (field) =>
+      Maintenance.aggregate([
+        { $match: { [field]: req.user._id } },
+        { $group: { _id: "$status", count: { $sum: 1 } } }
+      ]);
+    const toMap = (rows) => Object.fromEntries(rows.map((r) => [r._id, r.count]));
+    const [asTenant, asOwner] = await Promise.all([group("tenant"), group("owner")]);
+
+    res.json({ asTenant: toMap(asTenant), asOwner: toMap(asOwner) });
+  } catch (err) {
+    console.error("GET STATS ERROR:", err);
+    res.status(500).json({ message: "Failed to load stats" });
+  }
+});
+
+/* ================= SINGLE REQUEST ================= */
+
 router.get("/:id", async (req, res) => {
   try {
-    const request = await Maintenance.findById(req.params.id)
-      .populate("property", "title city area image price")
-      .populate("tenant", "name email phone")
-      .populate("owner", "name email phone")
-      .populate("updates.by", "name email");
-
-    if (!request) {
+    const request = await populated(req.params.id);
+    if (!request || (!sameId(request.owner, req.user) && !sameId(request.tenant, req.user))) {
       return res.status(404).json({ message: "Maintenance request not found" });
     }
-
     res.json(request);
   } catch (err) {
     console.error("GET MAINTENANCE ERROR:", err);
@@ -141,136 +161,113 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// Update maintenance status (owner only)
+/* ================= OWNER ACTIONS ================= */
+
+const loadAsOwner = async (req, res) => {
+  const maintenance = await Maintenance.findById(req.params.id);
+  if (!maintenance) {
+    res.status(404).json({ message: "Maintenance request not found" });
+    return null;
+  }
+  if (!sameId(maintenance.owner, req.user)) {
+    res.status(403).json({ message: "Not authorized" });
+    return null;
+  }
+  return maintenance;
+};
+
 router.put("/:id/status", async (req, res) => {
   try {
-    const { status, ownerEmail, message } = req.body;
-
-    const owner = await User.findOne({ email: ownerEmail });
-    if (!owner) {
-      return res.status(404).json({ message: "Owner not found" });
+    const { status } = req.body;
+    if (!STATUSES.includes(status)) {
+      return res.status(400).json({ message: "Invalid status" });
     }
 
-    const maintenance = await Maintenance.findById(req.params.id);
-    if (!maintenance) {
-      return res.status(404).json({ message: "Maintenance request not found" });
-    }
-
-    if (maintenance.owner.toString() !== owner._id.toString()) {
-      return res.status(403).json({ message: "Not authorized" });
-    }
+    const maintenance = await loadAsOwner(req, res);
+    if (!maintenance) return;
 
     const oldStatus = maintenance.status;
     maintenance.status = status;
-
-    if (status === "RESOLVED") {
-      maintenance.resolvedDate = new Date();
-    }
-
-    // Add update to history
+    maintenance.resolvedDate = status === "RESOLVED" ? new Date() : null;
     maintenance.updates.push({
-      message: message || `Status changed from ${oldStatus} to ${status}`,
-      by: owner._id,
+      message: text(req.body.message, 500) || `Status changed from ${STATUS_LABEL[oldStatus]} to ${STATUS_LABEL[status]}`,
+      by: req.user._id,
       role: "OWNER"
     });
-
     await maintenance.save();
 
-    // Notify tenant
     await Notification.create({
-      from: owner._id,
+      from: req.user._id,
       to: maintenance.tenant,
       property: maintenance.property,
       action: "MAINTENANCE_UPDATE",
-      message: `Maintenance request "${maintenance.title}" status: ${status}`
+      message: `Maintenance request "${maintenance.title}" is now ${STATUS_LABEL[status].toLowerCase()}`
     });
 
-    const populated = await Maintenance.findById(maintenance._id)
-      .populate("property", "title city area image")
-      .populate("tenant", "name email")
-      .populate("owner", "name email");
-
-    res.json(populated);
+    res.json(await populated(maintenance._id));
   } catch (err) {
     console.error("UPDATE STATUS ERROR:", err);
     res.status(500).json({ message: "Failed to update status" });
   }
 });
 
-// Assign worker (owner only)
 router.put("/:id/assign-worker", async (req, res) => {
   try {
-    const { ownerEmail, workerName, workerPhone, workerSpecialty, scheduledDate, estimatedCost } = req.body;
-
-    const owner = await User.findOne({ email: ownerEmail });
-    if (!owner) {
-      return res.status(404).json({ message: "Owner not found" });
+    const workerName = text(req.body.workerName, 80);
+    const workerPhone = text(req.body.workerPhone, 20);
+    const workerSpecialty = text(req.body.workerSpecialty, 80);
+    if (!workerName || !workerPhone) {
+      return res.status(400).json({ message: "Worker name and phone are required" });
     }
 
-    const maintenance = await Maintenance.findById(req.params.id);
-    if (!maintenance) {
-      return res.status(404).json({ message: "Maintenance request not found" });
+    const maintenance = await loadAsOwner(req, res);
+    if (!maintenance) return;
+
+    maintenance.assignedWorker = { name: workerName, phone: workerPhone, specialty: workerSpecialty };
+
+    const scheduledDate = req.body.scheduledDate ? new Date(req.body.scheduledDate) : null;
+    if (scheduledDate && !Number.isNaN(scheduledDate.getTime())) {
+      maintenance.scheduledDate = scheduledDate;
     }
-
-    if (maintenance.owner.toString() !== owner._id.toString()) {
-      return res.status(403).json({ message: "Not authorized" });
-    }
-
-    maintenance.assignedWorker = {
-      name: workerName || "",
-      phone: workerPhone || "",
-      specialty: workerSpecialty || ""
-    };
-
-    if (scheduledDate) {
-      maintenance.scheduledDate = new Date(scheduledDate);
-    }
-
-    if (estimatedCost) {
+    const estimatedCost = Number(req.body.estimatedCost);
+    if (estimatedCost > 0) {
       maintenance.estimatedCost = estimatedCost;
     }
-
     if (maintenance.status === "PENDING" || maintenance.status === "APPROVED") {
       maintenance.status = "IN_PROGRESS";
     }
 
+    const specialty = workerSpecialty ? ` (${workerSpecialty})` : "";
+    const schedule = maintenance.scheduledDate ? `, scheduled for ${maintenance.scheduledDate.toDateString()}` : "";
     maintenance.updates.push({
-      message: `Worker assigned: ${workerName} (${workerSpecialty})${scheduledDate ? ` - Scheduled for ${new Date(scheduledDate).toLocaleDateString()}` : ""}`,
-      by: owner._id,
+      message: `Worker assigned: ${workerName}${specialty}${schedule}`,
+      by: req.user._id,
       role: "OWNER"
     });
-
     await maintenance.save();
 
-    // Notify tenant
     await Notification.create({
-      from: owner._id,
+      from: req.user._id,
       to: maintenance.tenant,
       property: maintenance.property,
       action: "MAINTENANCE_UPDATE",
-      message: `Worker assigned for "${maintenance.title}": ${workerName} (${workerSpecialty})`
+      message: `Worker assigned for "${maintenance.title}": ${workerName}${specialty}`
     });
 
-    const populated = await Maintenance.findById(maintenance._id)
-      .populate("property", "title city area image")
-      .populate("tenant", "name email")
-      .populate("owner", "name email");
-
-    res.json(populated);
+    res.json(await populated(maintenance._id));
   } catch (err) {
     console.error("ASSIGN WORKER ERROR:", err);
     res.status(500).json({ message: "Failed to assign worker" });
   }
 });
 
-// Add comment/update (tenant or owner)
+/* ================= COMMENT (owner or tenant) ================= */
+
 router.post("/:id/comment", async (req, res) => {
   try {
-    const { userEmail, message, role } = req.body;
-
-    const user = await User.findOne({ email: userEmail });
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
+    const message = text(req.body.message, 1000);
+    if (!message) {
+      return res.status(400).json({ message: "Comment cannot be empty" });
     }
 
     const maintenance = await Maintenance.findById(req.params.id);
@@ -278,97 +275,57 @@ router.post("/:id/comment", async (req, res) => {
       return res.status(404).json({ message: "Maintenance request not found" });
     }
 
-    maintenance.updates.push({
-      message,
-      by: user._id,
-      role: role || "TENANT"
-    });
+    const isOwner = sameId(maintenance.owner, req.user);
+    if (!isOwner && !sameId(maintenance.tenant, req.user)) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
 
+    maintenance.updates.push({ message, by: req.user._id, role: isOwner ? "OWNER" : "TENANT" });
     await maintenance.save();
 
-    // Notify the other party
-    const notifyTo = role === "OWNER" ? maintenance.tenant : maintenance.owner;
     await Notification.create({
-      from: user._id,
-      to: notifyTo,
+      from: req.user._id,
+      to: isOwner ? maintenance.tenant : maintenance.owner,
       property: maintenance.property,
       action: "MAINTENANCE_COMMENT",
-      message: `New comment on "${maintenance.title}": ${message.substring(0, 50)}...`
+      message: `New comment on "${maintenance.title}": ${message.length > 60 ? `${message.slice(0, 60)}…` : message}`
     });
 
-    const populated = await Maintenance.findById(maintenance._id)
-      .populate("property", "title city area image")
-      .populate("tenant", "name email")
-      .populate("owner", "name email")
-      .populate("updates.by", "name email");
-
-    res.json(populated);
+    res.json(await populated(maintenance._id));
   } catch (err) {
     console.error("ADD COMMENT ERROR:", err);
     res.status(500).json({ message: "Failed to add comment" });
   }
 });
 
-// Rate resolved maintenance (tenant only)
+/* ================= TENANT RATES A RESOLVED REQUEST ================= */
+
 router.put("/:id/rate", async (req, res) => {
   try {
-    const { tenantEmail, rating, feedback } = req.body;
-
-    const tenant = await User.findOne({ email: tenantEmail });
-    if (!tenant) {
-      return res.status(404).json({ message: "Tenant not found" });
+    const rating = Number(req.body.rating);
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      return res.status(400).json({ message: "Rating must be between 1 and 5" });
     }
 
     const maintenance = await Maintenance.findById(req.params.id);
     if (!maintenance) {
       return res.status(404).json({ message: "Maintenance request not found" });
     }
-
-    if (maintenance.tenant.toString() !== tenant._id.toString()) {
+    if (!sameId(maintenance.tenant, req.user)) {
       return res.status(403).json({ message: "Not authorized" });
     }
-
     if (maintenance.status !== "RESOLVED") {
-      return res.status(400).json({ message: "Can only rate resolved requests" });
+      return res.status(400).json({ message: "Only resolved requests can be rated" });
     }
 
     maintenance.rating = rating;
-    maintenance.ratingFeedback = feedback || "";
-
+    maintenance.ratingFeedback = text(req.body.feedback, 500);
     await maintenance.save();
 
-    res.json({ message: "Rating submitted successfully", maintenance });
+    res.json({ message: "Rating submitted", maintenance });
   } catch (err) {
     console.error("RATE MAINTENANCE ERROR:", err);
     res.status(500).json({ message: "Failed to submit rating" });
-  }
-});
-
-// Get maintenance stats for a user
-router.get("/stats/:email", async (req, res) => {
-  try {
-    const user = await User.findOne({ email: req.params.email });
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    const asTenant = await Maintenance.aggregate([
-      { $match: { tenant: user._id } },
-      { $group: { _id: "$status", count: { $sum: 1 } } }
-    ]);
-
-    const asOwner = await Maintenance.aggregate([
-      { $match: { owner: user._id } },
-      { $group: { _id: "$status", count: { $sum: 1 } } }
-    ]);
-
-    res.json({
-      asTenant: asTenant.reduce((acc, curr) => ({ ...acc, [curr._id]: curr.count }), {}),
-      asOwner: asOwner.reduce((acc, curr) => ({ ...acc, [curr._id]: curr.count }), {})
-    });
-  } catch (err) {
-    console.error("GET STATS ERROR:", err);
-    res.status(500).json({ message: "Failed to load stats" });
   }
 });
 

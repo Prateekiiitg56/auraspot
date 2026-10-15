@@ -105,7 +105,13 @@ const userSchema = new mongoose.Schema({
   phoneVerified: {
     type: Boolean,
     default: false
-  }
+  },
+
+  // Listings bookmarked by the user
+  savedProperties: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Property"
+  }]
 
 }, { timestamps: true });
 

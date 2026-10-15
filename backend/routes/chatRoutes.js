@@ -1,231 +1,175 @@
 const express = require("express");
-const router = express.Router();
+const mongoose = require("mongoose");
 const Chat = require("../models/Chat");
 const User = require("../models/User");
 const Property = require("../models/Property");
 const Notification = require("../models/Notification");
+const { requireAuth, sameId } = require("../middleware/auth");
 
-// Send a message
+const router = express.Router();
+router.use(requireAuth);
+
+const MAX_MESSAGE_LENGTH = 2000;
+
+const populateChat = (query) =>
+  query.populate("sender", "name email").populate("receiver", "name email").populate("property", "title city area price images image");
+
+/* ================= SEND MESSAGE ================= */
+
 router.post("/", async (req, res) => {
   try {
-    const { propertyId, senderEmail, receiverEmail, message } = req.body;
+    const { propertyId, receiverEmail } = req.body;
+    const message = typeof req.body.message === "string" ? req.body.message.trim() : "";
 
-    if (!propertyId || !senderEmail || !receiverEmail || !message) {
-      return res.status(400).json({ message: "All fields are required" });
+    if (!propertyId || !receiverEmail || !message) {
+      return res.status(400).json({ message: "Property, receiver and message are required" });
+    }
+    if (message.length > MAX_MESSAGE_LENGTH) {
+      return res.status(400).json({ message: `Messages are limited to ${MAX_MESSAGE_LENGTH} characters` });
     }
 
-    // Find sender and receiver by email
-    const sender = await User.findOne({ email: senderEmail });
-    const receiver = await User.findOne({ email: receiverEmail });
+    const sender = req.user;
+    const [receiver, property] = await Promise.all([
+      User.findOne({ email: receiverEmail }),
+      Property.findById(propertyId)
+    ]);
 
-    if (!sender || !receiver) {
-      return res.status(404).json({ message: "Sender or receiver not found" });
+    if (!receiver || !property) {
+      return res.status(404).json({ message: "Receiver or property not found" });
+    }
+    if (sameId(receiver, sender)) {
+      return res.status(400).json({ message: "You cannot message yourself" });
+    }
+    // Every conversation is between the listing owner and one other user
+    if (!sameId(property.owner, sender) && !sameId(property.owner, receiver)) {
+      return res.status(403).json({ message: "Conversations must include the listing owner" });
     }
 
-    // Verify property exists
-    const property = await Property.findById(propertyId);
-    if (!property) {
-      return res.status(404).json({ message: "Property not found" });
-    }
+    const chat = await Chat.create({ property: property._id, sender: sender._id, receiver: receiver._id, message });
 
-    const chat = new Chat({
-      property: propertyId,
-      sender: sender._id,
-      receiver: receiver._id,
-      message
+    // Keep a single "new message" notification per conversation
+    await Notification.deleteMany({
+      property: property._id,
+      action: "MESSAGE",
+      $or: [
+        { from: sender._id, to: receiver._id },
+        { from: receiver._id, to: sender._id }
+      ]
+    });
+    await Notification.create({
+      from: sender._id,
+      to: receiver._id,
+      property: property._id,
+      action: "MESSAGE",
+      message: `New message from ${sender.name || sender.email} about ${property.title}`
     });
 
-    await chat.save();
-    
-    // Delete message notifications for this property between these two users
-    // (removes the notification that prompted this reply)
-    try {
-      await Notification.deleteMany({
-        property: propertyId,
-        action: "MESSAGE",
-        $or: [
-          { from: sender._id, to: receiver._id },
-          { from: receiver._id, to: sender._id }
-        ]
-      });
-    } catch (notifErr) {
-      // Silent fail for notification cleanup
-    }
-    
-    // Create notification for receiver that they got a message
-    try {
-      await Notification.create({
-        from: sender._id,
-        to: receiver._id,
-        property: propertyId,
-        action: "MESSAGE",
-        message: `New message from ${sender.name || sender.email} about ${property.title}`
-      });
-    } catch (notifErr) {
-      // Silent fail for notification
-    }
-    
-    const populatedChat = await Chat.findById(chat._id)
-      .populate("sender", "name email")
-      .populate("receiver", "name email")
-      .populate("property", "title location price");
-
-    res.status(201).json(populatedChat);
+    res.status(201).json(await populateChat(Chat.findById(chat._id)));
   } catch (error) {
-    console.error("Error sending message:", error);
+    console.error("SEND MESSAGE ERROR:", error);
     res.status(500).json({ message: "Failed to send message" });
   }
 });
 
-// Get all messages for a property between two specific users
+/* ================= INBOX: one entry per (property, other user) ================= */
+
+router.get("/inbox", async (req, res) => {
+  try {
+    const me = new mongoose.Types.ObjectId(String(req.user._id));
+
+    const conversations = await Chat.aggregate([
+      { $match: { $or: [{ sender: me }, { receiver: me }] } },
+      { $sort: { createdAt: -1 } },
+      {
+        $addFields: {
+          otherUser: { $cond: [{ $eq: ["$sender", me] }, "$receiver", "$sender"] }
+        }
+      },
+      {
+        $group: {
+          _id: { property: "$property", otherUser: "$otherUser" },
+          lastMessage: { $first: "$message" },
+          lastMessageTime: { $first: "$createdAt" },
+          lastSender: { $first: "$sender" },
+          unreadCount: {
+            $sum: { $cond: [{ $and: [{ $eq: ["$receiver", me] }, { $eq: ["$read", false] }] }, 1, 0] }
+          }
+        }
+      },
+      { $sort: { lastMessageTime: -1 } },
+      { $limit: 100 }
+    ]);
+
+    await User.populate(conversations, { path: "_id.otherUser", select: "name email" });
+    await Property.populate(conversations, { path: "_id.property", select: "title city area price images image owner" });
+
+    res.json(
+      conversations
+        .filter((c) => c._id.otherUser && c._id.property)
+        .map((c) => ({
+          property: c._id.property,
+          user: c._id.otherUser,
+          lastMessage: c.lastMessage,
+          lastMessageTime: c.lastMessageTime,
+          lastMessageMine: sameId(c.lastSender, me),
+          unreadCount: c.unreadCount
+        }))
+    );
+  } catch (error) {
+    console.error("INBOX ERROR:", error);
+    res.status(500).json({ message: "Failed to load conversations" });
+  }
+});
+
+/* ================= MESSAGES BETWEEN ME AND ANOTHER USER FOR A PROPERTY ================= */
+
 router.get("/property/:propertyId", async (req, res) => {
   try {
-    const { propertyId } = req.params;
-    const { userEmail, otherUserEmail } = req.query;
+    const me = req.user;
+    const other = req.query.otherUserEmail ? await User.findOne({ email: req.query.otherUserEmail }) : null;
 
-    if (!userEmail) {
-      return res.status(400).json({ message: "User email is required" });
-    }
-
-    const user = await User.findOne({ email: userEmail });
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    let query = {
-      property: propertyId,
-      $or: [{ sender: user._id }, { receiver: user._id }]
-    };
-
-    // If otherUserEmail is provided, filter to only show conversation with that user
-    if (otherUserEmail) {
-      const otherUser = await User.findOne({ email: otherUserEmail });
-      if (otherUser) {
-        query = {
-          property: propertyId,
+    const query = other
+      ? {
+          property: req.params.propertyId,
           $or: [
-            { sender: user._id, receiver: otherUser._id },
-            { sender: otherUser._id, receiver: user._id }
+            { sender: me._id, receiver: other._id },
+            { sender: other._id, receiver: me._id }
           ]
-        };
-      }
-    }
+        }
+      : { property: req.params.propertyId, $or: [{ sender: me._id }, { receiver: me._id }] };
 
-    // Get all messages for this property where user is either sender or receiver
-    const messages = await Chat.find(query)
-      .populate("sender", "name email")
-      .populate("receiver", "name email")
-      .populate("property", "title location price")
-      .sort({ createdAt: 1 });
-
-    res.json(messages);
+    res.json(await populateChat(Chat.find(query).sort({ createdAt: 1 }).limit(500)));
   } catch (error) {
-    console.error("Error fetching messages:", error);
+    console.error("FETCH MESSAGES ERROR:", error);
     res.status(500).json({ message: "Failed to fetch messages" });
   }
 });
 
-// Get all conversation threads for a property (for owner to see all users who messaged)
-router.get("/threads/:propertyId", async (req, res) => {
-  try {
-    const { propertyId } = req.params;
-    const { ownerEmail } = req.query;
+/* ================= MARK CONVERSATION AS READ ================= */
 
-    if (!ownerEmail) {
-      return res.status(400).json({ message: "Owner email is required" });
-    }
-
-    const owner = await User.findOne({ email: ownerEmail });
-    if (!owner) {
-      return res.status(404).json({ message: "Owner not found" });
-    }
-
-    // Get all messages for this property where owner is involved
-    const messages = await Chat.find({
-      property: propertyId,
-      $or: [{ sender: owner._id }, { receiver: owner._id }]
-    })
-      .populate("sender", "name email")
-      .populate("receiver", "name email")
-      .sort({ createdAt: -1 });
-
-    // Group messages by the other user (not owner)
-    const threads = {};
-    messages.forEach(msg => {
-      const otherUser = msg.sender.email === ownerEmail ? msg.receiver : msg.sender;
-      const otherEmail = otherUser.email;
-      
-      if (!threads[otherEmail]) {
-        threads[otherEmail] = {
-          user: otherUser,
-          lastMessage: msg.message,
-          lastMessageTime: msg.createdAt,
-          unreadCount: 0,
-          messageCount: 0
-        };
-      }
-      threads[otherEmail].messageCount++;
-      if (!msg.read && msg.receiver.email === ownerEmail) {
-        threads[otherEmail].unreadCount++;
-      }
-    });
-
-    // Convert to array
-    const threadArray = Object.values(threads);
-
-    res.json(threadArray);
-  } catch (error) {
-    console.error("Error fetching threads:", error);
-    res.status(500).json({ message: "Failed to fetch threads" });
-  }
-});
-
-// Mark messages as read
 router.put("/read/:propertyId", async (req, res) => {
   try {
-    const { propertyId } = req.params;
-    const { userEmail } = req.body;
-
-    if (!userEmail) {
-      return res.status(400).json({ message: "User email is required" });
+    const filter = { property: req.params.propertyId, receiver: req.user._id, read: false };
+    if (req.body.otherUserEmail) {
+      const other = await User.findOne({ email: req.body.otherUserEmail });
+      if (other) filter.sender = other._id;
     }
-
-    const user = await User.findOne({ email: userEmail });
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    // Mark all messages where user is receiver as read
-    await Chat.updateMany(
-      { property: propertyId, receiver: user._id, read: false },
-      { read: true }
-    );
-
-    res.json({ message: "Messages marked as read" });
+    await Chat.updateMany(filter, { read: true });
+    res.json({ ok: true });
   } catch (error) {
-    console.error("Error marking messages as read:", error);
+    console.error("MARK READ ERROR:", error);
     res.status(500).json({ message: "Failed to mark messages as read" });
   }
 });
 
-// Get unread message count for a user
-router.get("/unread/:userEmail", async (req, res) => {
+/* ================= UNREAD MESSAGE COUNT ================= */
+
+router.get("/unread-count", async (req, res) => {
   try {
-    const { userEmail } = req.params;
-
-    const user = await User.findOne({ email: userEmail });
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    const unreadCount = await Chat.countDocuments({
-      receiver: user._id,
-      read: false
-    });
-
+    const unreadCount = await Chat.countDocuments({ receiver: req.user._id, read: false });
     res.json({ unreadCount });
   } catch (error) {
-    console.error("Error fetching unread count:", error);
+    console.error("UNREAD COUNT ERROR:", error);
     res.status(500).json({ message: "Failed to fetch unread count" });
   }
 });

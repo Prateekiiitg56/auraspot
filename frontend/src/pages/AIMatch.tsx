@@ -1,22 +1,12 @@
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { API, getImageUrl } from "../services/api";
-import { useTheme } from "../context/ThemeContext";
-import "../App.css";
+import { useState } from "react";
+import type { FormEvent } from "react";
+import { Link } from "react-router-dom";
+import { Sparkles, Check, SearchX, MapPin } from "lucide-react";
+import { apiJson, formatINR, getPropertyImage, readError } from "../services/api";
+import { toast } from "../components/Feedback";
 
-interface AIScore {
-  totalScore: number;
-  breakdown: {
-    location: number;
-    budget: number;
-    propertyType: number;
-    amenities: number;
-    profileMatch: number;
-  };
-  matchReason: string;
-}
-
-interface MatchedProperty {
+type Breakdown = { location: number; budget: number; propertyType: number; amenities: number; profileMatch: number };
+type Match = {
   _id: string;
   title: string;
   price: number;
@@ -25,568 +15,203 @@ interface MatchedProperty {
   type: string;
   purpose: string;
   image?: string;
-  amenities?: string[];
-  propertyScore?: number;
-  aiScore: AIScore;
-}
+  images?: string[];
+  aiScore: { totalScore: number; breakdown: Breakdown; matchReason?: string };
+};
+type Results = { topMatches: Match[]; budgetFriendly: Match[]; closest: Match[] };
 
-interface AISuggestions {
-  topMatches: MatchedProperty[];
-  budgetFriendly: MatchedProperty[];
-  closest: MatchedProperty[];
-}
-
-const AMENITIES_LIST = [
-  "WiFi", "AC", "Parking", "Gym", "Security", "Power Backup",
-  "Furnished", "Laundry", "Kitchen", "Balcony", "Garden", "Pool",
-  "Study Room", "Mess", "Water Supply", "CCTV"
+const AMENITIES = ["Wi-Fi", "AC", "Parking", "Security", "Power Backup", "Furnished", "Laundry", "Kitchen", "Balcony", "Gym", "Meals", "Water Supply"];
+const PROFILES = [
+  { value: "", label: "Prefer not to say" },
+  { value: "student", label: "Student" },
+  { value: "worker", label: "Working professional" },
+  { value: "couple", label: "Couple" },
+  { value: "family", label: "Family" }
+];
+const TABS = [
+  { key: "topMatches", label: "Best matches" },
+  { key: "budgetFriendly", label: "Best value" },
+  { key: "closest", label: "Closest" }
+] as const;
+const FACTORS: { key: keyof Breakdown; label: string; max: number }[] = [
+  { key: "location", label: "Location", max: 30 },
+  { key: "budget", label: "Budget", max: 25 },
+  { key: "propertyType", label: "Type", max: 15 },
+  { key: "amenities", label: "Amenities", max: 15 },
+  { key: "profileMatch", label: "Lifestyle", max: 15 }
 ];
 
-const AIMatch: React.FC = () => {
-  const navigate = useNavigate();
-  useTheme(); // Initialize theme context
-  
-  // Form state
-  const [preferredLocation, setPreferredLocation] = useState("");
+const scoreTone = (score: number) => (score >= 75 ? "var(--verified)" : score >= 55 ? "var(--flag)" : "var(--brick)");
+
+const AIMatch = () => {
+  const [location, setLocation] = useState("");
   const [budgetMin, setBudgetMin] = useState("");
   const [budgetMax, setBudgetMax] = useState("");
   const [purpose, setPurpose] = useState("RENT");
   const [propertyType, setPropertyType] = useState("");
-  const [userProfile, setUserProfile] = useState("");
-  const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
-  
-  // Results state
+  const [profile, setProfile] = useState("");
+  const [amenities, setAmenities] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  const [suggestions, setSuggestions] = useState<AISuggestions | null>(null);
-  const [allMatches, setAllMatches] = useState<MatchedProperty[]>([]);
-  const [activeTab, setActiveTab] = useState<"top" | "budget" | "closest">("top");
-  const [showResults, setShowResults] = useState(false);
+  const [results, setResults] = useState<Results | null>(null);
+  const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("topMatches");
 
-  const toggleAmenity = (amenity: string) => {
-    setSelectedAmenities(prev => 
-      prev.includes(amenity) 
-        ? prev.filter(a => a !== amenity)
-        : [...prev, amenity]
-    );
-  };
+  const toggle = (a: string) => setAmenities((list) => (list.includes(a) ? list.filter((x) => x !== a) : [...list, a]));
 
-  const handleSearch = async (e: React.FormEvent) => {
+  const search = async (e: FormEvent) => {
     e.preventDefault();
-    
-    if (!preferredLocation) {
-      alert("Please enter a preferred location");
+    if (budgetMin && budgetMax && Number(budgetMin) > Number(budgetMax)) {
+      toast.error("Minimum budget can’t be higher than the maximum");
       return;
     }
-
     setLoading(true);
     try {
-      const response = await fetch(`${API}/properties/ai-match`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          preferredLocation,
-          budgetMin: budgetMin ? Number(budgetMin) : 0,
-          budgetMax: budgetMax ? Number(budgetMax) : 10000000,
-          purpose,
-          propertyType,
-          userProfile,
-          requiredAmenities: selectedAmenities
-        })
+      const res = await apiJson("/properties/ai-match", "POST", {
+        preferredLocation: location.trim(),
+        budgetMin: Number(budgetMin) || 0,
+        budgetMax: Number(budgetMax) || undefined,
+        purpose,
+        propertyType,
+        userProfile: profile,
+        requiredAmenities: amenities
       });
-
-      const data = await response.json();
-      
-      if (data.success) {
-        setSuggestions(data.suggestions);
-        setAllMatches(data.allMatches);
-        setShowResults(true);
-      } else {
-        alert("Failed to find matches");
-      }
-    } catch (error) {
-      console.error("AI Match error:", error);
-      alert("Failed to process matching");
+      if (!res.ok) throw new Error(await readError(res, "Matching failed"));
+      const data = await res.json();
+      setResults(data.suggestions);
+      setTab("topMatches");
+      requestAnimationFrame(() => document.getElementById("match-results")?.scrollIntoView({ behavior: "smooth" }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Matching failed");
     } finally {
       setLoading(false);
     }
   };
 
-  const getScoreColor = (score: number) => {
-    if (score >= 80) return "#10b981";
-    if (score >= 60) return "#3b82f6";
-    if (score >= 40) return "#f59e0b";
-    return "#ef4444";
-  };
-
-  const renderPropertyCard = (property: MatchedProperty, showAIScore = true) => (
-    <div
-      key={property._id}
-      onClick={() => navigate(`/property/${property._id}`)}
-      style={{
-        background: "linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(45, 55, 72, 0.9) 100%)",
-        border: "1px solid rgba(102, 126, 234, 0.3)",
-        borderRadius: "12px",
-        overflow: "hidden",
-        cursor: "pointer",
-        transition: "all 0.3s ease",
-        position: "relative"
-      }}
-      onMouseEnter={(e) => {
-        (e.currentTarget as HTMLDivElement).style.transform = "translateY(-4px)";
-        (e.currentTarget as HTMLDivElement).style.boxShadow = "0 12px 40px rgba(102, 126, 234, 0.3)";
-      }}
-      onMouseLeave={(e) => {
-        (e.currentTarget as HTMLDivElement).style.transform = "translateY(0)";
-        (e.currentTarget as HTMLDivElement).style.boxShadow = "none";
-      }}
-    >
-      {/* AI Match Score Badge */}
-      {showAIScore && property.aiScore && (
-        <div style={{
-          position: "absolute",
-          top: "12px",
-          right: "12px",
-          background: getScoreColor(property.aiScore.totalScore),
-          color: "white",
-          padding: "8px 12px",
-          borderRadius: "10px",
-          fontSize: "16px",
-          fontWeight: "700",
-          display: "flex",
-          alignItems: "center",
-          gap: "4px",
-          boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-          zIndex: 10
-        }}>
-          <span>🤖</span>
-          <span>{property.aiScore.totalScore}</span>
-          <span style={{ fontSize: "11px", opacity: 0.8 }}>/100</span>
-        </div>
-      )}
-
-      {/* Image */}
-      <div style={{ height: "160px", overflow: "hidden" }}>
-        <img
-          src={getImageUrl(property.image)}
-          alt={property.title}
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-        />
-      </div>
-
-      {/* Content */}
-      <div style={{ padding: "16px" }}>
-        <h4 style={{ margin: "0 0 8px 0", color: "#f1f5f9", fontSize: "16px" }}>
-          {property.title}
-        </h4>
-        <p style={{ margin: "0 0 4px 0", color: "#10b981", fontWeight: "700", fontSize: "18px" }}>
-          ₹{property.price.toLocaleString()}
-        </p>
-        <p style={{ margin: "0 0 8px 0", color: "#94a3b8", fontSize: "13px" }}>
-          📍 {property.city}{property.area ? `, ${property.area}` : ""}
-        </p>
-        
-        {/* Match Reason */}
-        {showAIScore && property.aiScore?.matchReason && (
-          <p style={{
-            margin: "8px 0 0 0",
-            padding: "8px",
-            background: "rgba(102, 126, 234, 0.15)",
-            borderRadius: "6px",
-            color: "#a5b4fc",
-            fontSize: "12px",
-            fontWeight: "500"
-          }}>
-            ✨ {property.aiScore.matchReason}
-          </p>
-        )}
-
-        {/* Tags */}
-        <div style={{ display: "flex", gap: "6px", marginTop: "10px", flexWrap: "wrap" }}>
-          <span style={{
-            background: "rgba(102, 126, 234, 0.2)",
-            color: "#a5b4fc",
-            padding: "3px 8px",
-            borderRadius: "4px",
-            fontSize: "11px"
-          }}>
-            {property.type}
-          </span>
-          <span style={{
-            background: "rgba(16, 185, 129, 0.2)",
-            color: "#6ee7b7",
-            padding: "3px 8px",
-            borderRadius: "4px",
-            fontSize: "11px"
-          }}>
-            {property.purpose}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-
-  const getCurrentTabData = () => {
-    if (!suggestions) return [];
-    switch (activeTab) {
-      case "top": return suggestions.topMatches;
-      case "budget": return suggestions.budgetFriendly;
-      case "closest": return suggestions.closest;
-      default: return suggestions.topMatches;
-    }
-  };
+  const list = results?.[tab] || [];
 
   return (
-    <div className="page">
-      <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
-        {/* Header */}
-        <div style={{ textAlign: "center", marginBottom: "40px" }}>
-          <h1 style={{ 
-            fontSize: "42px", 
-            marginBottom: "12px",
-            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent"
-          }}>
-            🤖 AI Rental Match
-          </h1>
-          <p style={{ color: "#94a3b8", fontSize: "18px" }}>
-            Find your perfect property match using our Smart Property AI
-          </p>
+    <div className="wrap page-section">
+      <div className="page-header">
+        <div>
+          <p className="eyebrow">Find my match</p>
+          <h1>Tell us what you need</h1>
+          <p>We rank every available listing against your location, budget and lifestyle — and show why.</p>
         </div>
-
-        {/* Search Form */}
-        <form onSubmit={handleSearch} style={{
-          background: "linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(45, 55, 72, 0.8) 100%)",
-          border: "1px solid rgba(102, 126, 234, 0.2)",
-          borderRadius: "16px",
-          padding: "32px",
-          marginBottom: "40px"
-        }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: "20px" }}>
-            {/* Location */}
-            <div>
-              <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "500" }}>
-                📍 Preferred Location *
-              </label>
-              <input
-                type="text"
-                value={preferredLocation}
-                onChange={(e) => setPreferredLocation(e.target.value)}
-                placeholder="e.g., Mumbai, Delhi, Bangalore"
-                style={{
-                  width: "100%",
-                  padding: "12px 16px",
-                  background: "rgba(15, 23, 42, 0.6)",
-                  border: "1px solid rgba(102, 126, 234, 0.3)",
-                  borderRadius: "8px",
-                  color: "#f1f5f9",
-                  fontSize: "14px"
-                }}
-                required
-              />
-            </div>
-
-            {/* Budget Range */}
-            <div>
-              <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "500" }}>
-                💰 Budget Range
-              </label>
-              <div style={{ display: "flex", gap: "10px" }}>
-                <input
-                  type="number"
-                  value={budgetMin}
-                  onChange={(e) => setBudgetMin(e.target.value)}
-                  placeholder="Min"
-                  style={{
-                    flex: 1,
-                    padding: "12px",
-                    background: "rgba(15, 23, 42, 0.6)",
-                    border: "1px solid rgba(102, 126, 234, 0.3)",
-                    borderRadius: "8px",
-                    color: "#f1f5f9"
-                  }}
-                />
-                <input
-                  type="number"
-                  value={budgetMax}
-                  onChange={(e) => setBudgetMax(e.target.value)}
-                  placeholder="Max"
-                  style={{
-                    flex: 1,
-                    padding: "12px",
-                    background: "rgba(15, 23, 42, 0.6)",
-                    border: "1px solid rgba(102, 126, 234, 0.3)",
-                    borderRadius: "8px",
-                    color: "#f1f5f9"
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Purpose */}
-            <div>
-              <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "500" }}>
-                🎯 Purpose
-              </label>
-              <select
-                value={purpose}
-                onChange={(e) => setPurpose(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "12px 16px",
-                  background: "rgba(15, 23, 42, 0.6)",
-                  border: "1px solid rgba(102, 126, 234, 0.3)",
-                  borderRadius: "8px",
-                  color: "#f1f5f9"
-                }}
-              >
-                <option value="RENT">Rent</option>
-                <option value="SALE">Buy</option>
-              </select>
-            </div>
-
-            {/* Property Type */}
-            <div>
-              <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "500" }}>
-                🏠 Property Type
-              </label>
-              <select
-                value={propertyType}
-                onChange={(e) => setPropertyType(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "12px 16px",
-                  background: "rgba(15, 23, 42, 0.6)",
-                  border: "1px solid rgba(102, 126, 234, 0.3)",
-                  borderRadius: "8px",
-                  color: "#f1f5f9"
-                }}
-              >
-                <option value="">Any Type</option>
-                <option value="HOSTEL">Hostel</option>
-                <option value="PG">PG</option>
-                <option value="ROOM">Room</option>
-                <option value="FLAT">Flat</option>
-                <option value="HOME">Home</option>
-              </select>
-            </div>
-
-            {/* User Profile */}
-            <div>
-              <label style={{ display: "block", marginBottom: "8px", color: "#cbd5e1", fontWeight: "500" }}>
-                👤 Your Profile
-              </label>
-              <select
-                value={userProfile}
-                onChange={(e) => setUserProfile(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "12px 16px",
-                  background: "rgba(15, 23, 42, 0.6)",
-                  border: "1px solid rgba(102, 126, 234, 0.3)",
-                  borderRadius: "8px",
-                  color: "#f1f5f9"
-                }}
-              >
-                <option value="">Select Profile</option>
-                <option value="student">Student</option>
-                <option value="worker">Working Professional</option>
-                <option value="family">Family</option>
-                <option value="couple">Couple</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Amenities */}
-          <div style={{ marginTop: "24px" }}>
-            <label style={{ display: "block", marginBottom: "12px", color: "#cbd5e1", fontWeight: "500" }}>
-              ✨ Required Amenities
-            </label>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-              {AMENITIES_LIST.map(amenity => (
-                <button
-                  key={amenity}
-                  type="button"
-                  onClick={() => toggleAmenity(amenity)}
-                  style={{
-                    padding: "8px 16px",
-                    borderRadius: "20px",
-                    border: selectedAmenities.includes(amenity) 
-                      ? "2px solid #667eea" 
-                      : "1px solid rgba(102, 126, 234, 0.3)",
-                    background: selectedAmenities.includes(amenity) 
-                      ? "rgba(102, 126, 234, 0.3)" 
-                      : "transparent",
-                    color: selectedAmenities.includes(amenity) ? "#a5b4fc" : "#94a3b8",
-                    cursor: "pointer",
-                    fontSize: "13px",
-                    transition: "all 0.2s ease"
-                  }}
-                >
-                  {amenity}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Submit Button */}
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: "100%",
-              marginTop: "28px",
-              padding: "16px",
-              background: loading 
-                ? "rgba(102, 126, 234, 0.3)" 
-                : "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-              color: "white",
-              border: "none",
-              borderRadius: "10px",
-              fontSize: "18px",
-              fontWeight: "700",
-              cursor: loading ? "not-allowed" : "pointer",
-              transition: "all 0.3s ease"
-            }}
-          >
-            {loading ? "🔍 Finding Best Matches..." : "🤖 Find My Perfect Match"}
-          </button>
-        </form>
-
-        {/* Results */}
-        {showResults && suggestions && (
-          <div>
-            {/* Tabs */}
-            <div style={{
-              display: "flex",
-              gap: "12px",
-              marginBottom: "24px",
-              borderBottom: "1px solid rgba(102, 126, 234, 0.2)",
-              paddingBottom: "12px"
-            }}>
-              <button
-                onClick={() => setActiveTab("top")}
-                style={{
-                  padding: "12px 24px",
-                  background: activeTab === "top" 
-                    ? "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" 
-                    : "transparent",
-                  color: activeTab === "top" ? "white" : "#94a3b8",
-                  border: activeTab === "top" ? "none" : "1px solid rgba(102, 126, 234, 0.3)",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  fontWeight: "600",
-                  fontSize: "14px"
-                }}
-              >
-                🏆 Top Matches ({suggestions.topMatches.length})
-              </button>
-              <button
-                onClick={() => setActiveTab("budget")}
-                style={{
-                  padding: "12px 24px",
-                  background: activeTab === "budget" 
-                    ? "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" 
-                    : "transparent",
-                  color: activeTab === "budget" ? "white" : "#94a3b8",
-                  border: activeTab === "budget" ? "none" : "1px solid rgba(102, 126, 234, 0.3)",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  fontWeight: "600",
-                  fontSize: "14px"
-                }}
-              >
-                ⚠️ Budget-Friendly ({suggestions.budgetFriendly.length})
-              </button>
-              <button
-                onClick={() => setActiveTab("closest")}
-                style={{
-                  padding: "12px 24px",
-                  background: activeTab === "closest" 
-                    ? "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" 
-                    : "transparent",
-                  color: activeTab === "closest" ? "white" : "#94a3b8",
-                  border: activeTab === "closest" ? "none" : "1px solid rgba(102, 126, 234, 0.3)",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  fontWeight: "600",
-                  fontSize: "14px"
-                }}
-              >
-                📍 Closest ({suggestions.closest.length})
-              </button>
-            </div>
-
-            {/* Tab Content */}
-            <div>
-              <h3 style={{ color: "#f1f5f9", marginBottom: "20px" }}>
-                {activeTab === "top" && "🏆 Top Matches For You"}
-                {activeTab === "budget" && "⚠️ Budget-Friendly Alternatives"}
-                {activeTab === "closest" && "📍 Closest Properties"}
-              </h3>
-              
-              {getCurrentTabData().length === 0 ? (
-                <div style={{ 
-                  textAlign: "center", 
-                  padding: "60px", 
-                  color: "#94a3b8",
-                  background: "rgba(30, 41, 59, 0.5)",
-                  borderRadius: "12px"
-                }}>
-                  <p style={{ fontSize: "18px" }}>No matches found in this category</p>
-                  <p style={{ fontSize: "14px", marginTop: "8px" }}>Try adjusting your preferences</p>
-                </div>
-              ) : (
-                <div style={{ 
-                  display: "grid", 
-                  gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", 
-                  gap: "20px" 
-                }}>
-                  {getCurrentTabData().map(property => renderPropertyCard(property))}
-                </div>
-              )}
-            </div>
-
-            {/* All Matches */}
-            {allMatches.length > 5 && (
-              <div style={{ marginTop: "48px" }}>
-                <h3 style={{ color: "#f1f5f9", marginBottom: "20px" }}>
-                  📊 All Matches ({allMatches.length} properties)
-                </h3>
-                <div style={{ 
-                  display: "grid", 
-                  gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", 
-                  gap: "20px" 
-                }}>
-                  {allMatches.slice(0, 12).map(property => renderPropertyCard(property))}
-                </div>
-                {allMatches.length > 12 && (
-                  <p style={{ textAlign: "center", color: "#94a3b8", marginTop: "20px" }}>
-                    Showing top 12 of {allMatches.length} matches
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* No Results Yet */}
-        {!showResults && (
-          <div style={{ 
-            textAlign: "center", 
-            padding: "60px 20px",
-            background: "linear-gradient(135deg, rgba(30, 41, 59, 0.5) 0%, rgba(45, 55, 72, 0.5) 100%)",
-            borderRadius: "16px",
-            border: "1px dashed rgba(102, 126, 234, 0.3)"
-          }}>
-            <p style={{ fontSize: "48px", marginBottom: "16px" }}>🏠</p>
-            <h3 style={{ color: "#f1f5f9", marginBottom: "8px" }}>Enter Your Preferences</h3>
-            <p style={{ color: "#94a3b8" }}>
-              Fill in the form above to get AI-powered property recommendations
-            </p>
-          </div>
-        )}
       </div>
+
+      <form className="paper-card match-form" onSubmit={search}>
+        <div className="form-row form-row-3">
+          <div className="field">
+            <label htmlFor="mt-loc">Preferred area or city</label>
+            <input id="mt-loc" type="text" required placeholder="e.g. Koramangala" value={location} onChange={(e) => setLocation(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="mt-purpose">Looking to</label>
+            <select id="mt-purpose" value={purpose} onChange={(e) => setPurpose(e.target.value)}>
+              <option value="RENT">Rent</option>
+              <option value="SALE">Buy</option>
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="mt-type">Property type</label>
+            <select id="mt-type" value={propertyType} onChange={(e) => setPropertyType(e.target.value)}>
+              <option value="">Any</option>
+              <option value="FLAT">Flat</option>
+              <option value="HOME">House</option>
+              <option value="ROOM">Room</option>
+              <option value="PG">PG</option>
+              <option value="HOSTEL">Hostel</option>
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="mt-min">Min budget (₹)</label>
+            <input id="mt-min" type="number" min={0} inputMode="numeric" value={budgetMin} onChange={(e) => setBudgetMin(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="mt-max">Max budget (₹)</label>
+            <input id="mt-max" type="number" min={0} inputMode="numeric" value={budgetMax} onChange={(e) => setBudgetMax(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="mt-profile">I am a</label>
+            <select id="mt-profile" value={profile} onChange={(e) => setProfile(e.target.value)}>
+              {PROFILES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+            </select>
+          </div>
+        </div>
+        <fieldset className="chip-group" style={{ marginTop: 4 }}>
+          <legend>Must-have amenities</legend>
+          <div className="chip-list">
+            {AMENITIES.map((a) => {
+              const on = amenities.includes(a);
+              return (
+                <button key={a} type="button" className={`chip ${on ? "selected" : ""}`} aria-pressed={on} onClick={() => toggle(a)}>
+                  {on && <Check size={13} aria-hidden="true" />} {a}
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+        <div className="wizard-actions">
+          <span className="muted" style={{ fontSize: 13 }}>Scoring is rule-based and transparent — see the breakdown on each result.</span>
+          <button type="submit" className="btn btn-solid" disabled={loading || !location.trim()}>
+            <Sparkles size={16} aria-hidden="true" /> {loading ? "Finding matches…" : "Find matches"}
+          </button>
+        </div>
+      </form>
+
+      {results && (
+        <section id="match-results" className="match-results" aria-live="polite">
+          <div className="tabs" role="tablist">
+            {TABS.map((t) => (
+              <button key={t.key} role="tab" aria-selected={tab === t.key} className={`tab ${tab === t.key ? "active" : ""}`} onClick={() => setTab(t.key)}>
+                {t.label} <span className="tab-count">{results[t.key].length}</span>
+              </button>
+            ))}
+          </div>
+
+          {list.length === 0 ? (
+            <div className="paper-card empty-state">
+              <SearchX size={36} aria-hidden="true" />
+              <h3>No listings to match yet</h3>
+              <p>There are no available listings right now. Try again later or browse everything on Explore.</p>
+              <Link to="/explore" className="btn btn-outline">Explore listings</Link>
+            </div>
+          ) : (
+            <ol className="match-list">
+              {list.map((m, i) => (
+                <li key={m._id} className="paper-card match-card">
+                  <Link to={`/property/${m._id}`} className="match-thumb">
+                    <img src={getPropertyImage(m)} alt="" loading="lazy" />
+                    <span className="match-rank mono">#{i + 1}</span>
+                  </Link>
+                  <div className="match-body">
+                    <div className="section-title-row">
+                      <h3><Link to={`/property/${m._id}`}>{m.title}</Link></h3>
+                      <span className="ai-score mono" style={{ color: scoreTone(m.aiScore.totalScore) }}>
+                        {m.aiScore.totalScore}<small>% match</small>
+                      </span>
+                    </div>
+                    <p className="muted inline-icon" style={{ margin: "2px 0 0", fontSize: 13.5 }}>
+                      <MapPin size={13} aria-hidden="true" /> {[m.area, m.city].filter(Boolean).join(", ")} · {m.type}
+                    </p>
+                    <p className="card-price mono" style={{ margin: "8px 0" }}>
+                      {formatINR(m.price)}{m.purpose === "RENT" && <span className="card-price-unit">/month</span>}
+                    </p>
+                    {m.aiScore.matchReason && <p className="match-reason">{m.aiScore.matchReason}</p>}
+                    <ul className="match-factors">
+                      {FACTORS.map((f) => (
+                        <li key={f.key}>
+                          <span>{f.label}</span>
+                          <div className="progress-track"><div className="progress-fill" style={{ width: `${(m.aiScore.breakdown[f.key] / f.max) * 100}%`, background: "var(--blueprint)" }} /></div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+      )}
     </div>
   );
 };

@@ -259,6 +259,10 @@ CORS_ORIGINS=http://localhost:5173,http://localhost:3000
 CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
 CLOUDINARY_API_KEY=your_cloudinary_api_key
 CLOUDINARY_API_SECRET=your_cloudinary_api_secret
+# Required: verifies Firebase ID tokens on every authenticated request (same as VITE_FIREBASE_PROJECT_ID)
+FIREBASE_PROJECT_ID=your_firebase_project_id
+# Required in production: shared secret for the Vercel cron that sends rent reminders
+CRON_SECRET=a_long_random_string
 ```
 
 ### Frontend (`frontend/.env`)
@@ -276,18 +280,18 @@ VITE_FIREBASE_APP_ID=your_app_id
 
 ## API Documentation
 
-### Authentication Endpoints
-| Method | Endpoint | Description |
-|:---|:---|:---|
-| POST | `/auth/register` | Register a new user |
-| POST | `/auth/login` | Log in and authenticate a user |
+### Authentication
+Sign-in is handled by Firebase Auth on the client. Every protected request sends the user's Firebase ID token as `Authorization: Bearer <token>`; the API verifies it and derives the caller's identity from it (never from request bodies). Routes that take an `:email` only accept the signed-in user's own email.
 
 ### User Endpoints
 | Method | Endpoint | Description |
 |:---|:---|:---|
 | POST | `/users/sync` | Sync Firebase user profile to MongoDB |
-| GET | `/users/:email` | Get user profile metadata |
-| PUT | `/users/:email` | Update user profile details |
+| GET | `/users/me` | Signed-in user's full profile |
+| GET | `/users/me/saved` | Saved (bookmarked) listings |
+| POST | `/users/me/saved/:propertyId` | Toggle a saved listing |
+| GET | `/users/email/:email` | Public profile (private fields only for yourself) |
+| PUT | `/users/profile` | Update your profile |
 | GET | `/users/stats/:userId` | Get success rates and badge information |
 
 ### Property Endpoints
@@ -295,7 +299,7 @@ VITE_FIREBASE_APP_ID=your_app_id
 |:---|:---|:---|
 | POST | `/properties` | Create a property listing (multipart/form-data) |
 | GET | `/properties` | Get currently active properties |
-| GET | `/properties/all` | Get all listed properties |
+| GET | `/properties/mine/deals` | Listings you rented or bought |
 | GET | `/properties/owner/:ownerId` | Get property listings created by owner |
 | GET | `/properties/:id` | Get individual property details |
 | DELETE | `/properties/:id` | Delete a property listing |

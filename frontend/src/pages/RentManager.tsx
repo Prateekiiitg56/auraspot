@@ -1,411 +1,509 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { auth } from "../services/firebase";
-import { API, getImageUrl } from "../services/api";
-import { useTheme } from "../context/ThemeContext";
-import VerificationStamp from "../components/VerificationStamp";
+import { useCallback, useEffect, useState } from "react";
+import type { FormEvent } from "react";
+import { Link } from "react-router-dom";
+import { Home, KeyRound, MapPin, CalendarClock, CheckCircle2, Clock, AlertTriangle, Receipt, FilePlus2 } from "lucide-react";
+import { apiFetch, apiJson, formatINR, getPropertyImage, readError } from "../services/api";
+import { useAuth } from "../context/AuthContext";
+import { toast, confirmDialog } from "../components/Feedback";
 
-interface RentAgreement {
+type Party = { _id: string; name: string; email: string };
+
+type PaymentRequest = {
   _id: string;
-  property: {
-    _id: string;
-    title: string;
-    city?: string;
-    area?: string;
-    type: string;
-    image?: string;
-    price: number;
-  };
-  owner: {
-    _id: string;
-    name: string;
-    email: string;
-  };
-  tenant: {
-    _id: string;
-    name: string;
-    email: string;
-  };
+  amount: number;
+  paymentMonth: string;
+  requestedAt: string;
+  status: "PENDING" | "VERIFIED" | "REJECTED";
+  paymentMethod?: string;
+  transactionId?: string;
+  notes?: string;
+  rejectionReason?: string;
+};
+
+type RentAgreement = {
+  _id: string;
+  property: { _id: string; title: string; city?: string; area?: string; type: string; image?: string; images?: string[] };
+  owner: Party;
+  tenant: Party;
   rentAmount: number;
   rentalStartDate: string;
   nextPaymentDate: string;
   paymentStatus: "PAID" | "PENDING" | "OVERDUE";
-  status: "ACTIVE" | "COMPLETED" | "TERMINATED";
-  paymentHistory: Array<{
-    amount: number;
-    paidDate: string;
-    paymentMonth: string;
-    status: string;
-  }>;
-  paymentRequests?: Array<{
-    amount: number;
-    paymentMonth: string;
-    requestedAt: string;
-    status: "PENDING" | "VERIFIED" | "REJECTED";
-    paymentMethod?: string;
-    transactionId?: string;
-    notes?: string;
-    verifiedAt?: string;
-    rejectionReason?: string;
-  }>;
-}
+  paymentHistory: Array<{ _id?: string; amount: number; paidDate: string; paymentMonth: string; notes?: string }>;
+  paymentRequests?: PaymentRequest[];
+};
 
-interface PendingProperty {
+type PendingProperty = {
   _id: string;
   title: string;
+  price: number;
   city?: string;
   area?: string;
-  type: string;
-  image?: string;
-  price: number;
-  assignedTo?: {
-    _id: string;
-    name: string;
-    email: string;
-  };
-}
+  assignedTo?: Party;
+};
 
-const RentManager: React.FC = () => {
-  const navigate = useNavigate();
-  useTheme();
+const PAYMENT_METHODS = ["UPI", "Bank Transfer", "Cash", "Cheque", "Other"];
+const DAY_MS = 1000 * 60 * 60 * 24;
+
+const formatDate = (d: string) => new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+const daysUntil = (d: string) => {
+  const due = new Date(d);
+  due.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((due.getTime() - today.getTime()) / DAY_MS);
+};
+
+const DueBadge = ({ agreement }: { agreement: RentAgreement }) => {
+  const days = daysUntil(agreement.nextPaymentDate);
+  if (agreement.paymentStatus === "OVERDUE" || days < 0) {
+    return (
+      <span className="status-pill status-danger">
+        <AlertTriangle size={13} aria-hidden="true" /> Overdue{days < 0 ? ` by ${-days}d` : ""}
+      </span>
+    );
+  }
+  if (days <= 5) {
+    return (
+      <span className="status-pill status-warn">
+        <Clock size={13} aria-hidden="true" /> {days === 0 ? "Due today" : `Due in ${days}d`}
+      </span>
+    );
+  }
+  return (
+    <span className="status-pill status-ok">
+      <CheckCircle2 size={13} aria-hidden="true" /> Up to date
+    </span>
+  );
+};
+
+const RentManager = () => {
+  const { user } = useAuth();
+  const email = user?.email || "";
+
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [ownerAgreements, setOwnerAgreements] = useState<RentAgreement[]>([]);
   const [tenantAgreements, setTenantAgreements] = useState<RentAgreement[]>([]);
   const [pendingProperties, setPendingProperties] = useState<PendingProperty[]>([]);
   const [activeTab, setActiveTab] = useState<"owner" | "tenant">("owner");
-  const [selectedAgreement, setSelectedAgreement] = useState<RentAgreement | null>(null);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [selectedProperty, setSelectedProperty] = useState<PendingProperty | null>(null);
-  const [rentAmount, setRentAmount] = useState("");
-  const [addingAgreement, setAddingAgreement] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  const [showPaymentRequestModal, setShowPaymentRequestModal] = useState(false);
-  const [showVerifyModal, setShowVerifyModal] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState("Cash");
-  const [transactionId, setTransactionId] = useState("");
-  const [paymentNotes, setPaymentNotes] = useState("");
-  const [submittingRequest, setSubmittingRequest] = useState(false);
+  // Tenant "I paid" modal
+  const [payTarget, setPayTarget] = useState<RentAgreement | null>(null);
+  const [payForm, setPayForm] = useState({ method: "UPI", transactionId: "", notes: "" });
 
-  const currentUserEmail = auth.currentUser?.email || "";
+  // Owner "create agreement" modal
+  const [createTarget, setCreateTarget] = useState<PendingProperty | null>(null);
+  const [createForm, setCreateForm] = useState({ rentAmount: "", securityDeposit: "", startDate: "" });
 
-  useEffect(() => {
-    if (!auth.currentUser) {
-      navigate("/login");
-      return;
-    }
-    loadAgreements();
-  }, []);
+  const [historyFor, setHistoryFor] = useState<RentAgreement | null>(null);
 
-  const loadAgreements = async () => {
-    setLoading(true);
+  const load = useCallback(async () => {
+    if (!email) return;
+    const e = encodeURIComponent(email);
     try {
-      const res = await fetch(`${API}/rent/my-agreements?email=${encodeURIComponent(currentUserEmail)}`);
-      if (res.ok) {
-        const data = await res.json();
-        setOwnerAgreements(data.asOwner || []);
-        setTenantAgreements(data.asTenant || []);
-      }
-
-      const pendingRes = await fetch(`${API}/rent/unassigned-properties?ownerEmail=${encodeURIComponent(currentUserEmail)}`);
-      if (pendingRes.ok) {
-        const pendingData = await pendingRes.json();
-        setPendingProperties(pendingData || []);
-      }
-    } catch (error) {
-      console.error("Failed to load agreements:", error);
+      const [ownerRes, tenantRes, pendingRes] = await Promise.all([
+        apiFetch(`/rent/owner/${e}`),
+        apiFetch(`/rent/tenant/${e}`),
+        apiFetch(`/rent/pending-properties/${e}`)
+      ]);
+      if (!ownerRes.ok || !tenantRes.ok) throw new Error(await readError(ownerRes.ok ? tenantRes : ownerRes));
+      const owner: RentAgreement[] = await ownerRes.json();
+      const tenant: RentAgreement[] = await tenantRes.json();
+      setOwnerAgreements(owner);
+      setTenantAgreements(tenant);
+      setPendingProperties(pendingRes.ok ? await pendingRes.json() : []);
+      setLoadError("");
+      // Open the tab that has content
+      setActiveTab((tab) => (tab === "owner" && owner.length === 0 && tenant.length > 0 ? "tenant" : tab));
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Could not load your agreements");
     } finally {
       setLoading(false);
     }
-  };
+  }, [email]);
 
-  const getDaysUntilDue = (dueDate: string) => {
-    const due = new Date(dueDate);
-    const today = new Date();
-    return Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  };
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  const markAsPaid = async (agreement: RentAgreement) => {
+  const run = async (id: string, action: () => Promise<Response>, success: string) => {
+    setBusyId(id);
     try {
-      const res = await fetch(`${API}/rent/${agreement._id}/pay`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amount: agreement.rentAmount,
-          ownerEmail: currentUserEmail,
-          notes: `Payment confirmed on ${new Date().toLocaleDateString()}`
-        })
-      });
-
-      if (res.ok) {
-        alert("Payment marked as received!");
-        loadAgreements();
-        setShowPaymentModal(false);
-        setSelectedAgreement(null);
-      }
-    } catch (error) {
-      console.error("Mark payment error:", error);
-    }
-  };
-
-  const terminateAgreement = async (agreement: RentAgreement) => {
-    if (!confirm("Are you sure you want to terminate this rent agreement?")) return;
-
-    try {
-      const res = await fetch(`${API}/rent/${agreement._id}/terminate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ownerEmail: currentUserEmail, reason: "Terminated by owner" })
-      });
-
-      if (res.ok) {
-        alert("Agreement terminated.");
-        loadAgreements();
-      }
-    } catch (error) {
-      console.error("Terminate error:", error);
-    }
-  };
-
-  const requestPaymentVerification = async () => {
-    if (!selectedAgreement) return;
-    setSubmittingRequest(true);
-    try {
-      const nextPayment = new Date(selectedAgreement.nextPaymentDate);
-      const paymentMonth = nextPayment.toLocaleString('default', { month: 'long', year: 'numeric' });
-
-      const res = await fetch(`${API}/rent/${selectedAgreement._id}/request-payment`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          tenantEmail: currentUserEmail,
-          amount: selectedAgreement.rentAmount,
-          paymentMonth,
-          paymentMethod,
-          transactionId,
-          notes: paymentNotes
-        })
-      });
-
-      if (res.ok) {
-        alert("Payment verification request sent!");
-        setShowPaymentRequestModal(false);
-        setSelectedAgreement(null);
-        loadAgreements();
-      }
-    } catch (error) {
-      console.error("Request error:", error);
+      const res = await action();
+      if (!res.ok) throw new Error(await readError(res));
+      toast.success(success);
+      await load();
+      return true;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Something went wrong");
+      return false;
     } finally {
-      setSubmittingRequest(false);
+      setBusyId(null);
     }
   };
 
-  const getPendingRequestsCount = (agreement: RentAgreement) => {
-    return agreement.paymentRequests?.filter(r => r.status === "PENDING").length || 0;
+  const recordPayment = async (a: RentAgreement) => {
+    const ok = await confirmDialog(`Record ${formatINR(a.rentAmount)} received from ${a.tenant.name}?`, {
+      message: "This marks the current month as paid and moves the due date to next month.",
+      confirmLabel: "Record payment"
+    });
+    if (ok) run(a._id, () => apiJson(`/rent/${a._id}/pay`, "POST", { amount: a.rentAmount }), "Payment recorded");
   };
 
-  const renderAgreementCard = (agreement: RentAgreement, isOwner: boolean) => {
-    const daysUntilDue = getDaysUntilDue(agreement.nextPaymentDate);
-    const isActive = agreement.status === "ACTIVE";
+  const endLease = async (a: RentAgreement) => {
+    const ok = await confirmDialog("End this rent agreement?", {
+      message: `${a.property.title} will be listed as available again and ${a.tenant.name} will be notified.`,
+      confirmLabel: "End agreement",
+      danger: true
+    });
+    if (ok) run(a._id, () => apiJson(`/rent/${a._id}/terminate`, "POST", { reason: "Ended by owner" }), "Agreement ended");
+  };
+
+  const reviewClaim = async (a: RentAgreement, req: PaymentRequest, action: "VERIFY" | "REJECT") => {
+    if (action === "REJECT") {
+      const ok = await confirmDialog("Reject this payment?", {
+        message: "The tenant will be told the payment could not be confirmed.",
+        confirmLabel: "Reject",
+        danger: true
+      });
+      if (!ok) return;
+    }
+    run(
+      req._id,
+      () => apiJson(`/rent/${a._id}/verify-payment`, "POST", { requestId: req._id, action }),
+      action === "VERIFY" ? "Payment confirmed" : "Payment rejected"
+    );
+  };
+
+  const submitPayment = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!payTarget) return;
+    const ok = await run(
+      payTarget._id,
+      () =>
+        apiJson(`/rent/${payTarget._id}/request-payment`, "POST", {
+          amount: payTarget.rentAmount,
+          paymentMethod: payForm.method,
+          transactionId: payForm.transactionId,
+          notes: payForm.notes
+        }),
+      "Payment sent to the owner for confirmation"
+    );
+    if (ok) setPayTarget(null);
+  };
+
+  const submitAgreement = async (e: FormEvent) => {
+    e.preventDefault();
+    const tenant = createTarget?.assignedTo;
+    if (!createTarget || !tenant) return;
+    const ok = await run(
+      createTarget._id,
+      () =>
+        apiJson("/rent/create", "POST", {
+          propertyId: createTarget._id,
+          tenantEmail: tenant.email,
+          rentAmount: Number(createForm.rentAmount) || createTarget.price,
+          securityDeposit: Number(createForm.securityDeposit) || 0,
+          rentalStartDate: createForm.startDate || new Date().toISOString()
+        }),
+      "Rent agreement created"
+    );
+    if (ok) setCreateTarget(null);
+  };
+
+  const renderCard = (a: RentAgreement, isOwner: boolean) => {
+    const other = isOwner ? a.tenant : a.owner;
+    const pendingClaims = (a.paymentRequests || []).filter((r) => r.status === "PENDING");
+    const location = [a.property.area, a.property.city].filter(Boolean).join(", ");
+    const busy = busyId === a._id;
 
     return (
-      <div
-        key={agreement._id}
-        className="paper-card deckle-edge"
-        style={{ marginBottom: "20px" }}
-      >
-        <div style={{ display: "flex", gap: "20px", alignItems: "center", flexWrap: "wrap" }}>
-          <img
-            src={getImageUrl(agreement.property?.image)}
-            alt={agreement.property?.title}
-            style={{
-              width: "130px",
-              height: "90px",
-              objectFit: "cover",
-              borderRadius: "var(--radius-sm)",
-              border: "1px solid var(--paper-line)"
-            }}
-          />
-          <div style={{ flex: 1, minWidth: "220px" }}>
-            <h3 style={{ fontSize: "18px", margin: "0 0 4px", fontFamily: "var(--font-serif)" }}>
-              {agreement.property?.title || "Property Unit"}
+      <article key={a._id} className="paper-card agreement-card">
+        <div className="agreement-main">
+          <img src={getPropertyImage(a.property)} alt="" className="agreement-thumb" loading="lazy" />
+          <div className="agreement-info">
+            <h3>
+              <Link to={`/property/${a.property._id}`}>{a.property.title}</Link>
             </h3>
-            <div style={{ fontSize: "13px", color: "var(--ink-soft)", marginBottom: "8px" }}>
-              📍 {agreement.property?.city}{agreement.property?.area ? `, ${agreement.property.area}` : ""}
-            </div>
-            <div className="mono" style={{ fontSize: "20px", fontWeight: 700, color: "var(--blueprint)" }}>
-              ₹{agreement.rentAmount.toLocaleString()} / month
-            </div>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "8px" }}>
-            {isActive ? (
-              <span className={`tag ${agreement.paymentStatus === "PAID" ? "tag-green" : "tag-amber"}`}>
-                {agreement.paymentStatus === "PAID" ? "✓ Escrow Paid" : "⏳ Due Soon"}
-              </span>
-            ) : (
-              <span className="tag" style={{ background: "var(--paper-line)", color: "var(--ink-soft)" }}>
-                {agreement.status}
-              </span>
+            {location && (
+              <p className="muted inline-icon"><MapPin size={13} aria-hidden="true" /> {location}</p>
             )}
-            <VerificationStamp size="sm" rotation={-4} />
+            <p className="agreement-rent mono">
+              {formatINR(a.rentAmount)} <span>/ month</span>
+            </p>
           </div>
+          <DueBadge agreement={a} />
         </div>
 
-        {/* Ledger Details Row */}
-        <div style={{
-          marginTop: "16px",
-          paddingTop: "14px",
-          borderTop: "1px dashed var(--paper-line)",
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-          gap: "14px",
-          fontSize: "13px"
-        }}>
+        <dl className="agreement-facts">
           <div>
-            <div style={{ color: "var(--ink-soft)", fontSize: "11px", textTransform: "uppercase" }}>
-              {isOwner ? "Tenant Contact" : "Landlord Contact"}
-            </div>
-            <div style={{ fontWeight: 600, color: "var(--blueprint)", cursor: "pointer" }}
-              onClick={() => navigate(`/user/${isOwner ? agreement.tenant.email : agreement.owner.email}`)}>
-              {isOwner ? agreement.tenant?.name : agreement.owner?.name}
-            </div>
+            <dt>{isOwner ? "Tenant" : "Owner"}</dt>
+            <dd><Link to={`/user/${encodeURIComponent(other.email)}`}>{other.name || other.email}</Link></dd>
           </div>
-
           <div>
-            <div style={{ color: "var(--ink-soft)", fontSize: "11px", textTransform: "uppercase" }}>Lease Commencement</div>
-            <div className="mono">{new Date(agreement.rentalStartDate).toLocaleDateString()}</div>
+            <dt>Started</dt>
+            <dd className="mono">{formatDate(a.rentalStartDate)}</dd>
           </div>
-
           <div>
-            <div style={{ color: "var(--ink-soft)", fontSize: "11px", textTransform: "uppercase" }}>Next Settlement Due</div>
-            <div className="mono" style={{ color: daysUntilDue <= 5 ? "var(--brick)" : "var(--ink)", fontWeight: 600 }}>
-              {new Date(agreement.nextPaymentDate).toLocaleDateString()} ({daysUntilDue} days)
-            </div>
+            <dt>Next due</dt>
+            <dd className="mono">{formatDate(a.nextPaymentDate)}</dd>
           </div>
-        </div>
+          <div>
+            <dt>Payments</dt>
+            <dd className="mono">{a.paymentHistory.length}</dd>
+          </div>
+        </dl>
 
-        {/* Action Toolbar */}
-        <div style={{ marginTop: "16px", display: "flex", gap: "10px", flexWrap: "wrap", justifyContent: "flex-end" }}>
-          {isOwner && isActive && (
+        {pendingClaims.length > 0 && (
+          <div className="claim-list">
+            {pendingClaims.map((r) => (
+              <div key={r._id} className="claim-row">
+                <div>
+                  <strong>
+                    {isOwner ? `${a.tenant.name} reported paying` : "Awaiting owner confirmation:"} {formatINR(r.amount)}
+                  </strong>
+                  <span className="muted">
+                    {r.paymentMonth} · {r.paymentMethod}
+                    {r.transactionId ? ` · Ref ${r.transactionId}` : ""}
+                  </span>
+                </div>
+                {isOwner && (
+                  <div className="claim-actions">
+                    <button className="btn btn-outline btn-sm" disabled={busyId === r._id} onClick={() => reviewClaim(a, r, "REJECT")}>
+                      Reject
+                    </button>
+                    <button className="btn btn-solid btn-sm" disabled={busyId === r._id} onClick={() => reviewClaim(a, r, "VERIFY")}>
+                      Confirm
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="agreement-actions">
+          <button className="btn btn-ghost btn-sm" onClick={() => setHistoryFor(a)} disabled={a.paymentHistory.length === 0}>
+            <Receipt size={15} aria-hidden="true" /> Payment history
+          </button>
+          <span className="spacer" />
+          {isOwner ? (
             <>
-              {agreement.paymentStatus !== "PAID" && (
-                <button className="btn btn-blueprint" onClick={() => markAsPaid(agreement)}>
-                  ✓ Confirm Receipt
-                </button>
-              )}
-              <button className="btn btn-paper" style={{ color: "var(--brick)" }} onClick={() => terminateAgreement(agreement)}>
-                End Lease
+              <button className="btn btn-outline btn-sm btn-text-danger" disabled={busy} onClick={() => endLease(a)}>
+                End agreement
+              </button>
+              <button className="btn btn-solid btn-sm" disabled={busy} onClick={() => recordPayment(a)}>
+                Record payment
               </button>
             </>
+          ) : (
+            pendingClaims.length === 0 && (
+              <button
+                className="btn btn-solid btn-sm"
+                disabled={busy}
+                onClick={() => {
+                  setPayForm({ method: "UPI", transactionId: "", notes: "" });
+                  setPayTarget(a);
+                }}
+              >
+                I’ve paid this month
+              </button>
+            )
           )}
-
-          {!isOwner && agreement.paymentStatus !== "PAID" && (
-            <button className="btn btn-blueprint" onClick={() => {
-              setSelectedAgreement(agreement);
-              setShowPaymentRequestModal(true);
-            }}>
-              💳 Record Escrow Payment
-            </button>
-          )}
-
-          <button className="btn btn-paper" onClick={() => navigate(`/property/${agreement.property._id}`)}>
-            Inspect Property →
-          </button>
         </div>
-      </div>
+      </article>
     );
   };
 
   if (loading) {
     return (
-      <div className="wrap" style={{ textAlign: "center", padding: "80px 20px" }}>
-        <div className="ai-loading-spinner" style={{ margin: "0 auto 12px" }} />
-        <div className="mono" style={{ color: "var(--ink-soft)" }}>Loading verified rent ledger...</div>
+      <div className="wrap page-section">
+        <div className="skeleton" style={{ height: 90, marginBottom: 24 }} />
+        <div className="skeleton" style={{ height: 220, marginBottom: 16 }} />
+        <div className="skeleton" style={{ height: 220 }} />
       </div>
     );
   }
 
+  const monthlyIncome = ownerAgreements.reduce((sum, a) => sum + a.rentAmount, 0);
+  const awaitingReview = ownerAgreements.reduce(
+    (n, a) => n + (a.paymentRequests || []).filter((r) => r.status === "PENDING").length,
+    0
+  );
+
   return (
-    <div className="wrap" style={{ padding: "40px 24px" }}>
-      {/* Title & Header */}
-      <div style={{ marginBottom: "32px", borderBottom: "1px solid var(--paper-line)", paddingBottom: "20px" }}>
-        <div className="mono" style={{ fontSize: "11px", color: "var(--blueprint)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-          AuraSpot Verified Escrow Ledger
-        </div>
-        <h1 style={{ fontSize: "32px", margin: "4px 0 8px" }}>
-          Rent Manager & Lease Ledger
-        </h1>
-        <p style={{ color: "var(--ink-soft)", fontSize: "15px", margin: 0 }}>
-          Manage active lease terms, monthly rent collections, and land title records.
-        </p>
-      </div>
-
-      {/* Role Tabs */}
-      <div className="system-tabs-container" style={{ marginBottom: "32px" }}>
-        <button
-          className={`system-tab-button ${activeTab === "owner" ? "active" : ""}`}
-          onClick={() => setActiveTab("owner")}
-        >
-          🏠 Landlord Portfolio ({ownerAgreements.length})
-        </button>
-        <button
-          className={`system-tab-button ${activeTab === "tenant" ? "active" : ""}`}
-          onClick={() => setActiveTab("tenant")}
-        >
-          🔑 Tenant Leases ({tenantAgreements.length})
-        </button>
-      </div>
-
-      {/* Active Tab Content */}
-      {activeTab === "owner" && (
+    <div className="wrap page-section">
+      <div className="page-header">
         <div>
-          <h2 style={{ fontSize: "22px", color: "var(--ink)", marginBottom: "20px" }}>
-            Landlord Rent Collection Ledger
-          </h2>
+          <p className="eyebrow">Rent manager</p>
+          <h1>Rent & agreements</h1>
+          <p>Track monthly rent, confirm payments and manage active leases.</p>
+        </div>
+      </div>
+
+      {loadError && (
+        <div className="form-error" role="alert">
+          {loadError}{" "}
+          <button className="link-btn" onClick={() => { setLoading(true); load(); }}>Retry</button>
+        </div>
+      )}
+
+      <div className="tabs" role="tablist" aria-label="Agreement role">
+        <button role="tab" aria-selected={activeTab === "owner"} className={`tab ${activeTab === "owner" ? "active" : ""}`} onClick={() => setActiveTab("owner")}>
+          <Home size={16} aria-hidden="true" /> As owner <span className="tab-count">{ownerAgreements.length}</span>
+        </button>
+        <button role="tab" aria-selected={activeTab === "tenant"} className={`tab ${activeTab === "tenant" ? "active" : ""}`} onClick={() => setActiveTab("tenant")}>
+          <KeyRound size={16} aria-hidden="true" /> As tenant <span className="tab-count">{tenantAgreements.length}</span>
+        </button>
+      </div>
+
+      {activeTab === "owner" ? (
+        <div role="tabpanel">
+          {ownerAgreements.length > 0 && (
+            <div className="summary-strip">
+              <div><span>Active agreements</span><strong className="mono">{ownerAgreements.length}</strong></div>
+              <div><span>Expected monthly rent</span><strong className="mono">{formatINR(monthlyIncome)}</strong></div>
+              <div><span>Payments to confirm</span><strong className="mono">{awaitingReview}</strong></div>
+            </div>
+          )}
+
+          {pendingProperties.length > 0 && (
+            <section className="paper-card pending-box">
+              <h2 className="inline-icon"><FilePlus2 size={18} aria-hidden="true" /> Booked without an agreement</h2>
+              {pendingProperties.map((p) => (
+                <div key={p._id} className="claim-row">
+                  <div>
+                    <strong>{p.title}</strong>
+                    <span className="muted">Tenant: {p.assignedTo?.name || p.assignedTo?.email || "—"} · {formatINR(p.price)}/month</span>
+                  </div>
+                  <button
+                    className="btn btn-solid btn-sm"
+                    disabled={!p.assignedTo}
+                    onClick={() => {
+                      setCreateForm({ rentAmount: String(p.price), securityDeposit: "", startDate: new Date().toISOString().slice(0, 10) });
+                      setCreateTarget(p);
+                    }}
+                  >
+                    Create agreement
+                  </button>
+                </div>
+              ))}
+            </section>
+          )}
 
           {ownerAgreements.length === 0 && pendingProperties.length === 0 ? (
-            /* Styled Ledger Empty State */
-            <div className="paper-card" style={{ padding: "48px 24px", textAlign: "center" }}>
-              <div style={{ fontSize: "40px", marginBottom: "12px" }}>🏠</div>
-              <h3 style={{ fontSize: "20px", marginBottom: "8px" }}>No Rented Properties Registered</h3>
-              <p style={{ color: "var(--ink-soft)", maxWidth: "460px", margin: "0 auto 24px", fontSize: "14px" }}>
-                You currently have no active tenant agreements or assigned properties under management. Post a property listing to begin tracking escrow rent collections.
-              </p>
-              <button className="btn btn-blueprint" onClick={() => navigate("/add-property")}>
-                + Post Property Listing
-              </button>
+            <div className="paper-card empty-state">
+              <Home size={36} aria-hidden="true" />
+              <h3>No active rentals yet</h3>
+              <p>When you accept a rental request, the agreement and rent schedule appear here automatically.</p>
+              <Link to="/add" className="btn btn-solid">List a property</Link>
             </div>
           ) : (
-            <div>
-              {ownerAgreements.map(agreement => renderAgreementCard(agreement, true))}
+            ownerAgreements.map((a) => renderCard(a, true))
+          )}
+        </div>
+      ) : (
+        <div role="tabpanel">
+          {tenantAgreements.length === 0 ? (
+            <div className="paper-card empty-state">
+              <KeyRound size={36} aria-hidden="true" />
+              <h3>No active leases</h3>
+              <p>Once an owner accepts your rental request, your rent schedule shows up here.</p>
+              <Link to="/explore" className="btn btn-solid">Explore homes</Link>
             </div>
+          ) : (
+            tenantAgreements.map((a) => renderCard(a, false))
           )}
         </div>
       )}
 
-      {activeTab === "tenant" && (
-        <div>
-          <h2 style={{ fontSize: "22px", color: "var(--ink)", marginBottom: "20px" }}>
-            Tenant Active Leases
-          </h2>
-
-          {tenantAgreements.length === 0 ? (
-            <div className="paper-card" style={{ padding: "48px 24px", textAlign: "center" }}>
-              <div style={{ fontSize: "40px", marginBottom: "12px" }}>🔑</div>
-              <h3 style={{ fontSize: "20px", marginBottom: "8px" }}>No Active Leases Found</h3>
-              <p style={{ color: "var(--ink-soft)", maxWidth: "460px", margin: "0 auto 24px", fontSize: "14px" }}>
-                You have not signed any active property lease agreements via AuraSpot yet. Explore verified homes in your locality.
-              </p>
-              <button className="btn btn-blueprint" onClick={() => navigate("/explore")}>
-                Explore Scored Homes →
+      {payTarget && (
+        <div className="modal-backdrop" onClick={() => setPayTarget(null)}>
+          <form className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="pay-title" onClick={(e) => e.stopPropagation()} onSubmit={submitPayment}>
+            <h3 id="pay-title" className="modal-title">Report a rent payment</h3>
+            <p className="modal-text">
+              {formatINR(payTarget.rentAmount)} for {payTarget.property.title}. The owner confirms it once received.
+            </p>
+            <div className="field" style={{ marginTop: 20 }}>
+              <label htmlFor="pay-method">Payment method</label>
+              <select id="pay-method" value={payForm.method} onChange={(e) => setPayForm({ ...payForm, method: e.target.value })}>
+                {PAYMENT_METHODS.map((m) => <option key={m}>{m}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="pay-ref">Transaction / reference ID <span className="muted">(optional)</span></label>
+              <input id="pay-ref" type="text" maxLength={100} value={payForm.transactionId} onChange={(e) => setPayForm({ ...payForm, transactionId: e.target.value })} />
+            </div>
+            <div className="field">
+              <label htmlFor="pay-notes">Note <span className="muted">(optional)</span></label>
+              <textarea id="pay-notes" rows={2} maxLength={500} value={payForm.notes} onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })} />
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-outline" onClick={() => setPayTarget(null)}>Cancel</button>
+              <button type="submit" className="btn btn-solid" disabled={busyId === payTarget._id}>
+                {busyId === payTarget._id ? "Sending…" : "Send to owner"}
               </button>
             </div>
-          ) : (
-            <div>
-              {tenantAgreements.map(agreement => renderAgreementCard(agreement, false))}
+          </form>
+        </div>
+      )}
+
+      {createTarget && (
+        <div className="modal-backdrop" onClick={() => setCreateTarget(null)}>
+          <form className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="create-title" onClick={(e) => e.stopPropagation()} onSubmit={submitAgreement}>
+            <h3 id="create-title" className="modal-title">Create rent agreement</h3>
+            <p className="modal-text">{createTarget.title} · Tenant {createTarget.assignedTo?.name}</p>
+            <div className="form-row" style={{ marginTop: 20 }}>
+              <div className="field">
+                <label htmlFor="c-rent">Monthly rent (₹)</label>
+                <input id="c-rent" type="number" min={1} required value={createForm.rentAmount} onChange={(e) => setCreateForm({ ...createForm, rentAmount: e.target.value })} />
+              </div>
+              <div className="field">
+                <label htmlFor="c-deposit">Security deposit (₹)</label>
+                <input id="c-deposit" type="number" min={0} value={createForm.securityDeposit} onChange={(e) => setCreateForm({ ...createForm, securityDeposit: e.target.value })} />
+              </div>
             </div>
-          )}
+            <div className="field">
+              <label htmlFor="c-start">Start date</label>
+              <input id="c-start" type="date" required value={createForm.startDate} onChange={(e) => setCreateForm({ ...createForm, startDate: e.target.value })} />
+              <p className="field-hint">Rent will be due on this day each month (capped at the 28th).</p>
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-outline" onClick={() => setCreateTarget(null)}>Cancel</button>
+              <button type="submit" className="btn btn-solid" disabled={busyId === createTarget._id}>Create agreement</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {historyFor && (
+        <div className="modal-backdrop" onClick={() => setHistoryFor(null)}>
+          <div className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="hist-title" onClick={(e) => e.stopPropagation()}>
+            <h3 id="hist-title" className="modal-title inline-icon"><CalendarClock size={18} aria-hidden="true" /> Payment history</h3>
+            <p className="modal-text">{historyFor.property.title}</p>
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr><th>Month</th><th>Amount</th><th>Recorded</th><th>Note</th></tr>
+                </thead>
+                <tbody>
+                  {[...historyFor.paymentHistory].reverse().map((p, i) => (
+                    <tr key={p._id || i}>
+                      <td>{p.paymentMonth}</td>
+                      <td className="mono">{formatINR(p.amount)}</td>
+                      <td className="mono">{formatDate(p.paidDate)}</td>
+                      <td className="muted">{p.notes || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-outline" onClick={() => setHistoryFor(null)}>Close</button>
+            </div>
+          </div>
         </div>
       )}
     </div>
