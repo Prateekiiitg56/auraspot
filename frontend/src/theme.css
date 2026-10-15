@@ -24,7 +24,8 @@
   --color-border-subtle: var(--paper-line);
   --color-primary: var(--blueprint);
   --color-primary-hover: var(--blueprint-deep);
-  --color-primary-bg: var(--paper-subtle);
+  --color-primary-bg: color-mix(in srgb, var(--blueprint) 10%, transparent);
+  --color-primary-border: color-mix(in srgb, var(--blueprint) 35%, transparent);
   --color-success: var(--verified);
   --color-success-bg: var(--paper-subtle);
   --color-success-border: var(--verified);
@@ -90,7 +91,8 @@ body.dark-mode,
   --color-border-subtle: var(--paper-line);
   --color-primary: var(--blueprint);
   --color-primary-hover: var(--blueprint-deep);
-  --color-primary-bg: var(--paper-subtle);
+  --color-primary-bg: color-mix(in srgb, var(--blueprint) 10%, transparent);
+  --color-primary-border: color-mix(in srgb, var(--blueprint) 35%, transparent);
   --color-success: var(--verified);
   --color-success-bg: var(--paper-subtle);
   --color-success-border: var(--verified);
@@ -116,7 +118,7 @@ body {
   background-color: var(--paper);
   color: var(--ink);
   font-family: var(--font-sans);
-  font-size: 14.5px;
+  font-size: 15px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;

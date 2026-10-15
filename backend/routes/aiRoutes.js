@@ -7,7 +7,7 @@ const express = require("express");
 const router = express.Router();
 const aiService = require("../services/aiService");
 const Property = require("../models/Property");
-const User = require("../models/User");
+const { requireAuth } = require("../middleware/auth");
 
 // Helper to remove undefined values from aiInsights before saving
 const sanitizeAiInsights = (existingInsights, newData) => {
@@ -73,30 +73,11 @@ router.get("/score/:propertyId", async (req, res) => {
       return res.json({ cached: false, ...scoreData });
     }
     
-    // If AI failed, return a basic fallback score
-    const fallbackScore = {
-      score: 65,
-      priceRating: "FAIR",
-      locationQuality: "GOOD",
-      highlights: ["Property listed on AuraSpot"],
-      concerns: [],
-      summary: "This property is available for viewing. Contact the owner for more details."
-    };
-    
-    return res.json({ cached: false, fallback: true, ...fallbackScore });
+    // AI unavailable: say so instead of inventing a score
+    return res.json({ available: false });
   } catch (error) {
     console.error("AI Score error:", error);
-    // Return fallback instead of error
-    res.json({ 
-      cached: false, 
-      fallback: true,
-      score: 60,
-      priceRating: "FAIR",
-      locationQuality: "AVERAGE",
-      highlights: ["Listed property"],
-      concerns: [],
-      summary: "AI analysis temporarily unavailable. Please check back later."
-    });
+    res.json({ available: false });
   }
 });
 
@@ -145,62 +126,10 @@ router.get("/fraud-check/:propertyId", async (req, res) => {
       }
     }
 
-    res.json({ cached: false, ...fraudData });
+    res.json(fraudData ? { cached: false, ...fraudData } : { available: false });
   } catch (error) {
     console.error("Fraud check error:", error);
-    // Return fallback instead of error
-    res.json({ 
-      cached: false, 
-      fallback: true,
-      riskLevel: "LOW",
-      riskScore: 15,
-      flags: []
-    });
-  }
-});
-
-/* ================= USER-PROPERTY MATCHING ================= */
-
-// Get matched properties for a user
-router.post("/match", async (req, res) => {
-  try {
-    const { userEmail, budget, preferredCity, lookingFor, preferences, userType } = req.body;
-
-    // Build query for properties
-    const query = { status: "AVAILABLE" };
-    if (lookingFor) query.listingType = lookingFor;
-    if (preferredCity) query.city = new RegExp(preferredCity, "i");
-    if (budget?.max) query.price = { $lte: budget.max };
-
-    const properties = await Property.find(query).limit(20).sort({ createdAt: -1 });
-
-    if (properties.length === 0) {
-      return res.json({ matches: [], suggestion: "No properties found matching your criteria" });
-    }
-
-    const userProfile = {
-      email: userEmail,
-      userType: userType || "general",
-      budget,
-      preferredCity,
-      lookingFor,
-      preferences
-    };
-
-    const matchData = await aiService.matchUserToProperties(userProfile, properties);
-
-    // Enrich matches with full property data
-    if (matchData?.matches) {
-      matchData.matches = matchData.matches.map(m => ({
-        ...m,
-        property: properties[m.propertyIndex - 1] || null
-      })).filter(m => m.property);
-    }
-
-    res.json(matchData);
-  } catch (error) {
-    console.error("Match error:", error);
-    res.status(500).json({ message: "Failed to match properties", error: error.message });
+    res.json({ available: false });
   }
 });
 
@@ -241,51 +170,27 @@ router.get("/rent-suggestion/:propertyId", async (req, res) => {
       }
     }
 
-    res.json({ cached: false, ...rentData });
+    res.json(rentData ? { cached: false, ...rentData } : { available: false });
   } catch (error) {
     console.error("Rent suggestion error:", error);
-    // Return fallback based on property price
-    res.json({ 
-      cached: false, 
-      fallback: true,
-      suggestedRent: null,
-      rentRange: { min: null, max: null },
-      marketInsight: "AI rent suggestion temporarily unavailable. Please check back later.",
-      negotiationTip: "Consider comparing with similar properties in the area."
-    });
-  }
-});
-
-/* ================= MAINTENANCE PRIORITY ================= */
-
-// Predict maintenance priority
-router.post("/maintenance-priority", async (req, res) => {
-  try {
-    const { requestId, category, title, description, status, createdAt } = req.body;
-
-    const request = {
-      _id: requestId || "temp",
-      category,
-      title,
-      description,
-      status: status || "PENDING",
-      createdAt: createdAt || new Date()
-    };
-
-    const priorityData = await aiService.predictMaintenancePriority(request);
-    res.json(priorityData);
-  } catch (error) {
-    console.error("Maintenance priority error:", error);
-    res.status(500).json({ message: "Failed to predict priority", error: error.message });
+    res.json({ available: false });
   }
 });
 
 /* ================= AI CHAT ================= */
 
 // Property-specific chat
-router.post("/chat/:propertyId", async (req, res) => {
+router.post("/chat/:propertyId", requireAuth, async (req, res) => {
   try {
-    const { question, chatHistory } = req.body;
+    const question = typeof req.body.question === "string" ? req.body.question.trim().slice(0, 500) : "";
+    if (!question) {
+      return res.status(400).json({ message: "Ask a question about this property" });
+    }
+    const chatHistory = Array.isArray(req.body.chatHistory)
+      ? req.body.chatHistory
+          .slice(-6)
+          .map((m) => ({ role: m?.role === "user" ? "user" : "assistant", content: String(m?.content || "").slice(0, 1000) }))
+      : [];
     
     const property = await Property.findById(req.params.propertyId).populate("owner", "name");
     if (!property) {
@@ -308,54 +213,12 @@ Price Rating: ${property.aiInsights?.priceRating || "Not analyzed"}
 `;
 
     // Pass the property object for market data context
-    const response = await aiService.propertyChat(propertyDetails, question, chatHistory || [], property);
+    const response = await aiService.propertyChat(propertyDetails, question, chatHistory);
     res.json({ response });
   } catch (error) {
     console.error("AI Chat error:", error);
-    res.status(500).json({ message: "Failed to get AI response", error: error.message });
+    res.status(502).json({ message: "The AI assistant is unavailable right now. Please try again shortly." });
   }
-});
-
-/* ================= FULL INSIGHTS ================= */
-
-// Generate all insights for a property
-router.post("/generate-insights/:propertyId", async (req, res) => {
-  try {
-    const property = await Property.findById(req.params.propertyId);
-    if (!property) {
-      return res.status(404).json({ message: "Property not found" });
-    }
-
-    // Clear existing cache
-    aiService.clearPropertyCache(req.params.propertyId);
-
-    // Generate fresh insights
-    const insights = await aiService.generatePropertyInsights(property);
-    
-    if (insights) {
-      property.aiInsights = insights;
-      await property.save();
-    }
-
-    res.json({ success: true, insights });
-  } catch (error) {
-    console.error("Generate insights error:", error);
-    res.status(500).json({ message: "Failed to generate insights", error: error.message });
-  }
-});
-
-/* ================= CACHE MANAGEMENT ================= */
-
-// Get cache stats (admin)
-router.get("/cache-stats", (req, res) => {
-  const stats = aiService.getCacheStats();
-  res.json(stats);
-});
-
-// Clear cache for property
-router.delete("/cache/:propertyId", (req, res) => {
-  aiService.clearPropertyCache(req.params.propertyId);
-  res.json({ success: true, message: "Cache cleared" });
 });
 
 module.exports = router;

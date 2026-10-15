@@ -1,31 +1,24 @@
 const mongoose = require("mongoose");
-require("dotenv").config();
 
-let isConnected = false;
+let connecting = null;
 
+/** Connects once and reuses the connection (safe for concurrent serverless requests). */
 const connectDB = async () => {
-  if (isConnected) {
-    console.log("Using existing MongoDB connection");
-    return;
-  }
+  if (mongoose.connection.readyState === 1) return;
 
   if (!process.env.MONGODB_URI) {
-    console.error("MONGODB_URI is not defined in environment variables");
     throw new Error("MONGODB_URI is not defined");
   }
 
-  try {
-    const db = await mongoose.connect(process.env.MONGODB_URI, {
-      maxPoolSize: 10,
-    });
-    isConnected = db.connections[0].readyState === 1;
-    console.log("MongoDB connected successfully");
-  } catch (error) {
-    console.error("MongoDB connection error:", error.message);
-    throw error;
+  if (!connecting) {
+    connecting = mongoose
+      .connect(process.env.MONGODB_URI, { maxPoolSize: 10 })
+      .then(() => console.log("MongoDB connected"))
+      .finally(() => {
+        connecting = null;
+      });
   }
+  await connecting;
 };
 
 module.exports = connectDB;
-
-

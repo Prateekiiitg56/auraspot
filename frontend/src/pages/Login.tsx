@@ -1,335 +1,119 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
+import { Link } from "react-router-dom";
+import { signInWithEmailAndPassword, signInWithPopup, signInWithRedirect, getRedirectResult, sendPasswordResetEmail } from "firebase/auth";
 import { auth, googleProvider } from "../services/firebase";
-import { signInWithEmailAndPassword, signInWithPopup, signInWithRedirect, getRedirectResult } from "firebase/auth";
-import { Link, useNavigate } from "react-router-dom";
-import { API } from "../services/api";
+import AuthLayout, { GoogleIcon } from "../components/AuthLayout";
+import { toast } from "../components/Feedback";
+import { authErrorMessage } from "../services/authErrors";
 
-// Detect if user is on mobile/iOS/tablet
-const isMobile = () => {
-  const userAgent = navigator.userAgent || navigator.vendor;
-  // Check for mobile devices including tablets
-  return /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(userAgent) ||
-         (navigator.maxTouchPoints > 0 && /Macintosh/.test(userAgent)); // iPad with desktop mode
-};
+// Popups are unreliable on mobile browsers; use the redirect flow there
+const prefersRedirect = () =>
+  /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+  (navigator.maxTouchPoints > 0 && /Macintosh/.test(navigator.userAgent));
 
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loadingGoogle, setLoadingGoogle] = useState(false);
+  const [error, setError] = useState("");
   const [loadingEmail, setLoadingEmail] = useState(false);
+  const [loadingGoogle, setLoadingGoogle] = useState(false);
 
-  const navigate = useNavigate();
-
-  // Handle redirect result when coming back from Google sign-in on mobile
+  // Surface errors from the mobile Google redirect flow (success is handled by AuthProvider)
   useEffect(() => {
-    const handleRedirectResult = async () => {
-      try {
-        const result = await getRedirectResult(auth);
-        if (result) {
-          const user = result.user;
-          // Sync user to MongoDB
-          try {
-            await fetch(`${API}/users/sync`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                firebaseUid: user.uid,
-                name: user.displayName,
-                email: user.email
-              })
-            });
-          } catch (syncErr) {
-            console.error("Sync error (non-fatal):", syncErr);
-          }
-          navigate("/profile");
-        }
-      } catch (err) {
-        console.error("Redirect result error:", err);
-      }
-    };
-    handleRedirectResult();
-  }, [navigate]);
+    getRedirectResult(auth).catch((err) => setError(authErrorMessage(err, "Google sign-in failed.")));
+  }, []);
 
-  const login = async () => {
-    if (!email || !password) {
-      alert("Please enter email and password");
-      return;
-    }
-
+  const login = async (e: FormEvent) => {
+    e.preventDefault();
+    setError("");
     setLoadingEmail(true);
     try {
-      const result = await signInWithEmailAndPassword(auth, email, password);
-      
-      // Sync user to MongoDB
-      try {
-        await fetch(`${API}/users/sync`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            firebaseUid: result.user.uid,
-            name: result.user.displayName || email.split("@")[0],
-            email: result.user.email
-          })
-        });
-      } catch (syncErr) {
-        console.error("Sync error (non-fatal):", syncErr);
-        // Don't fail login if sync fails
-      }
-
-      navigate("/profile");
-    } catch (err: any) {
-      console.error("Login error:", err);
-      if (err.code === "auth/user-not-found") {
-        alert("User not found. Please sign up first.");
-      } else if (err.code === "auth/wrong-password") {
-        alert("Incorrect password");
-      } else {
-        alert("Login failed: " + (err.message || "Unknown error"));
-      }
-    } finally {
+      await signInWithEmailAndPassword(auth, email.trim(), password);
+      // Navigation happens in <GuestOnly> once the session is established
+    } catch (err) {
+      setError(authErrorMessage(err, "Sign-in failed. Please try again."));
       setLoadingEmail(false);
     }
   };
 
   const googleLogin = async () => {
-    if (loadingGoogle) return;
+    setError("");
     setLoadingGoogle(true);
-
     try {
-      // Use popup for desktop, redirect for mobile
-      if (isMobile()) {
+      if (prefersRedirect()) {
         await signInWithRedirect(auth, googleProvider);
         return;
       }
-
-      // Desktop: use popup
-      const result = await signInWithPopup(auth, googleProvider);
-      const user = result.user;
-
-      // Sync user to MongoDB
-      try {
-        await fetch(`${API}/users/sync`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            firebaseUid: user.uid,
-            name: user.displayName,
-            email: user.email
-          })
-        });
-      } catch (syncErr) {
-        console.error("Sync error (non-fatal):", syncErr);
-      }
-
-      navigate("/profile");
-    } catch (err: any) {
-      console.error("Google login error:", err);
-      alert("Google login failed: " + (err.message || "Please try email/password login"));
-    } finally {
+      await signInWithPopup(auth, googleProvider);
+    } catch (err) {
+      setError(authErrorMessage(err, "Google sign-in failed. Try email and password instead."));
       setLoadingGoogle(false);
     }
   };
 
+  const resetPassword = async () => {
+    if (!email.trim()) {
+      setError("Enter your email address first, then choose “Forgot password?” again.");
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      toast.success("If an account exists for this email, a reset link is on its way.");
+    } catch (err) {
+      setError(authErrorMessage(err, "Could not send the reset email."));
+    }
+  };
+
   return (
-    <div className="page" style={{
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      minHeight: "100vh",
-      padding: "20px"
-    }}>
-      <div style={{
-        maxWidth: "440px",
-        width: "100%",
-        background: "linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(45, 55, 72, 0.9) 100%)",
-        border: "1px solid rgba(102, 126, 234, 0.2)",
-        borderRadius: "20px",
-        padding: "48px 40px",
-        backdropFilter: "blur(8px)",
-        boxShadow: "0 20px 60px rgba(102, 126, 234, 0.15)"
-      }}>
-        {/* Header */}
-        <div style={{ textAlign: "center", marginBottom: "40px" }}>
-          <h1 style={{
-            fontSize: "32px",
-            marginBottom: "8px",
-            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-            backgroundClip: "text",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent"
-          }}>
-            Welcome Back
-          </h1>
-          <p style={{ color: "#94a3b8", fontSize: "14px" }}>
-            Sign in to your AuraSpot account
-          </p>
-        </div>
+    <AuthLayout title="Welcome back" subtitle="Sign in to manage your listings, rentals and messages.">
+      <button type="button" className="btn btn-outline btn-block" onClick={googleLogin} disabled={loadingGoogle}>
+        <GoogleIcon />
+        {loadingGoogle ? "Connecting…" : "Continue with Google"}
+      </button>
 
-        {/* Email Input */}
-        <div style={{ marginBottom: "20px" }}>
+      <div className="divider-text"><span>or</span></div>
+
+      <form onSubmit={login} noValidate>
+        <div className="field">
+          <label htmlFor="login-email">Email</label>
           <input
-            placeholder="Email address"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
+            id="login-email"
             type="email"
-            style={{
-              width: "100%",
-              padding: "12px 16px",
-              background: "rgba(15, 23, 42, 0.6)",
-              border: "1px solid rgba(102, 126, 234, 0.3)",
-              borderRadius: "8px",
-              color: "#f1f5f9",
-              fontSize: "14px",
-              outline: "none",
-              transition: "all 0.3s ease"
-            }}
-            onFocus={(e) => {
-              (e.currentTarget as HTMLInputElement).style.borderColor = "#667eea";
-              (e.currentTarget as HTMLInputElement).style.boxShadow = "0 0 12px rgba(102, 126, 234, 0.3)";
-            }}
-            onBlur={(e) => {
-              (e.currentTarget as HTMLInputElement).style.borderColor = "rgba(102, 126, 234, 0.3)";
-              (e.currentTarget as HTMLInputElement).style.boxShadow = "none";
-            }}
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
           />
         </div>
-
-        {/* Password Input */}
-        <div style={{ marginBottom: "28px" }}>
+        <div className="field">
+          <div className="field-label-row">
+            <label htmlFor="login-password">Password</label>
+            <button type="button" className="link-btn" onClick={resetPassword}>
+              Forgot password?
+            </button>
+          </div>
           <input
+            id="login-password"
             type="password"
-            placeholder="Password"
+            autoComplete="current-password"
             value={password}
-            onChange={e => setPassword(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "12px 16px",
-              background: "rgba(15, 23, 42, 0.6)",
-              border: "1px solid rgba(102, 126, 234, 0.3)",
-              borderRadius: "8px",
-              color: "#f1f5f9",
-              fontSize: "14px",
-              outline: "none",
-              transition: "all 0.3s ease"
-            }}
-            onFocus={(e) => {
-              (e.currentTarget as HTMLInputElement).style.borderColor = "#667eea";
-              (e.currentTarget as HTMLInputElement).style.boxShadow = "0 0 12px rgba(102, 126, 234, 0.3)";
-            }}
-            onBlur={(e) => {
-              (e.currentTarget as HTMLInputElement).style.borderColor = "rgba(102, 126, 234, 0.3)";
-              (e.currentTarget as HTMLInputElement).style.boxShadow = "none";
-            }}
+            onChange={(e) => setPassword(e.target.value)}
+            required
           />
         </div>
 
-        {/* Login Button */}
-        <button 
-          onClick={login} 
-          disabled={loadingEmail}
-          style={{
-            width: "100%",
-            padding: "14px 16px",
-            background: loadingEmail 
-              ? "rgba(102, 126, 234, 0.3)"
-              : "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-            color: "white",
-            border: "none",
-            borderRadius: "8px",
-            fontWeight: "700",
-            fontSize: "16px",
-            cursor: loadingEmail ? "not-allowed" : "pointer",
-            transition: "all 0.3s ease",
-            marginBottom: "20px"
-          }}
-          onMouseEnter={(e) => {
-            if (!loadingEmail) {
-              (e.currentTarget as HTMLButtonElement).style.transform = "translateY(-2px)";
-              (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 8px 24px rgba(102, 126, 234, 0.4)";
-            }
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0)";
-            (e.currentTarget as HTMLButtonElement).style.boxShadow = "none";
-          }}
-        >
-          {loadingEmail ? "Logging in..." : "Sign In"}
+        {error && <p className="form-error" role="alert">{error}</p>}
+
+        <button type="submit" className="btn btn-solid btn-block" disabled={loadingEmail || !email || !password}>
+          {loadingEmail ? "Signing in…" : "Sign in"}
         </button>
+      </form>
 
-        {/* Divider */}
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "12px",
-          margin: "28px 0",
-          color: "#64748b"
-        }}>
-          <div style={{ flex: 1, height: "1px", background: "rgba(102, 126, 234, 0.2)" }}></div>
-          <span style={{ fontSize: "12px" }}>or</span>
-          <div style={{ flex: 1, height: "1px", background: "rgba(102, 126, 234, 0.2)" }}></div>
-        </div>
-
-        {/* Google Button */}
-        <button
-          className="google-btn"
-          onClick={googleLogin}
-          disabled={loadingGoogle}
-          style={{
-            width: "100%",
-            padding: "14px 16px",
-            background: "rgba(102, 126, 234, 0.1)",
-            border: "1px solid rgba(102, 126, 234, 0.3)",
-            borderRadius: "8px",
-            color: "#cbd5e1",
-            fontWeight: "600",
-            fontSize: "16px",
-            cursor: loadingGoogle ? "not-allowed" : "pointer",
-            transition: "all 0.3s ease",
-            marginBottom: "28px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "8px"
-          }}
-          onMouseEnter={(e) => {
-            if (!loadingGoogle) {
-              (e.currentTarget as HTMLButtonElement).style.background = "rgba(102, 126, 234, 0.2)";
-              (e.currentTarget as HTMLButtonElement).style.borderColor = "#667eea";
-            }
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.background = "rgba(102, 126, 234, 0.1)";
-            (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(102, 126, 234, 0.3)";
-          }}
-        >
-          <span>🔐</span>
-          {loadingGoogle ? "Signing in..." : "Continue with Google"}
-        </button>
-
-        {/* Signup Link */}
-        <p style={{
-          textAlign: "center",
-          color: "#94a3b8",
-          fontSize: "14px",
-          margin: "0"
-        }}>
-          New here?{" "}
-          <Link 
-            to="/signup"
-            style={{
-              color: "#667eea",
-              textDecoration: "none",
-              fontWeight: "600",
-              transition: "color 0.3s ease"
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.color = "#764ba2"}
-            onMouseLeave={(e) => e.currentTarget.style.color = "#667eea"}
-          >
-            Create an account
-          </Link>
-        </p>
-      </div>
-    </div>
+      <p className="auth-switch">
+        New to AuraSpot? <Link to="/signup">Create an account</Link>
+      </p>
+    </AuthLayout>
   );
 };
 

@@ -64,13 +64,10 @@ const uploadMultipleImages = async (files, folder = "auraspot") => {
  */
 const deleteImage = async (url) => {
   try {
-    // Extract public_id from URL
-    const parts = url.split("/");
-    const filename = parts[parts.length - 1];
-    const folder = parts[parts.length - 2];
-    const publicId = `${folder}/${filename.split(".")[0]}`;
-    
-    await cloudinary.uploader.destroy(publicId);
+    // https://res.cloudinary.com/<cloud>/image/upload/[<transforms>/]v123/<folder>/<name>.<ext>
+    const match = /\/upload\/(?:.*?\/)?v\d+\/(.+)\.[a-z0-9]+$/i.exec(url || "");
+    if (!match) return;
+    await cloudinary.uploader.destroy(match[1]);
   } catch (error) {
     console.error("Cloudinary delete error:", error);
   }

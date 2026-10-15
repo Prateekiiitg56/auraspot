@@ -1,6 +1,7 @@
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
+import { MapPin, Search } from "lucide-react";
 
 interface MapPickerProps {
   latitude: number | string;
@@ -8,281 +9,151 @@ interface MapPickerProps {
   onLocationChange: (lat: number, lon: number) => void;
 }
 
+type Suggestion = { lat: string; lon: string; display_name: string; place_id: number };
+
+const INDIA_CENTER: L.LatLngTuple = [20.5937, 78.9629];
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const markerIcon = L.icon({
+  iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
+  iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
+  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  shadowSize: [41, 41]
+});
+
 const MapPicker = ({ latitude, longitude, onLocationChange }: MapPickerProps) => {
-  const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<L.Map | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
+  const onChangeRef = useRef(onLocationChange);
+  onChangeRef.current = onLocationChange;
 
-  const lat = Number(latitude) || 20.5937;
-  const lon = Number(longitude) || 78.9629;
+  const [query, setQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [searching, setSearching] = useState(false);
 
-  const [searchCity, setSearchCity] = useState("");
-  const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const lat = Number(latitude);
+  const lon = Number(longitude);
+  const hasPoint = Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0) && latitude !== "";
 
-  // Initialize map
+  const placeMarker = (point: L.LatLngTuple) => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (markerRef.current) markerRef.current.setLatLng(point);
+    else markerRef.current = L.marker(point, { icon: markerIcon }).addTo(map);
+  };
+
+  // Create the map once
   useEffect(() => {
-    if (!mapContainerRef.current) return;
-
-    // Remove existing map if it exists
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.remove();
-      mapInstanceRef.current = null;
-    }
-
-    // Create new map
-    const map = L.map(mapContainerRef.current).setView([lat, lon], lat && lon ? 13 : 4);
-
-    // Add tile layer
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    if (!containerRef.current) return;
+    const map = L.map(containerRef.current).setView(INDIA_CENTER, 4);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);
-
-    // Add marker if coordinates exist
-    if (lat && lon) {
-      const icon = L.icon({
-        iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
-        shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
-        iconSize: [32, 48],
-        iconAnchor: [16, 48],
-        shadowSize: [50, 50]
-      });
-
-      markerRef.current = L.marker([lat, lon], { icon }).addTo(map);
-    }
-
-    // Handle map clicks
-    map.on('click', (e) => {
-      const { lat: clickLat, lng: clickLng } = e.latlng;
-      onLocationChange(clickLat, clickLng);
-
-      // Update or create marker
-      if (markerRef.current) {
-        markerRef.current.setLatLng([clickLat, clickLng]);
-      } else {
-        const icon = L.icon({
-          iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
-          shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
-          iconSize: [32, 48],
-          iconAnchor: [16, 48],
-          shadowSize: [50, 50]
-        });
-        markerRef.current = L.marker([clickLat, clickLng], { icon }).addTo(map);
-      }
-
-      map.flyTo([clickLat, clickLng], map.getZoom());
-    });
-
-    mapInstanceRef.current = map;
-
-    // Cleanup
+    map.on("click", (e: L.LeafletMouseEvent) => onChangeRef.current(e.latlng.lat, e.latlng.lng));
+    mapRef.current = map;
     return () => {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
+      map.remove();
+      mapRef.current = null;
+      markerRef.current = null;
     };
-  }, [lat, lon]);
+  }, []);
 
-  const searchLocation = async (city: string) => {
-    if (!city.trim()) {
+  // Keep the marker in sync with the selected coordinates
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !hasPoint) return;
+    placeMarker([lat, lon]);
+    if (!map.getBounds().contains([lat, lon]) || map.getZoom() < 12) {
+      map.setView([lat, lon], Math.max(map.getZoom(), 14));
+    }
+  }, [lat, lon, hasPoint]);
+
+  // Debounced geocoding (Nominatim usage policy: max 1 request/second)
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 3) {
       setSuggestions([]);
       return;
     }
-
-    setLoadingSuggestions(true);
-    try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city)}&limit=5`
-      );
-      const data = await response.json();
-      setSuggestions(data);
-    } catch (err) {
-      console.error("Failed to search locations:", err);
-      setSuggestions([]);
-    } finally {
-      setLoadingSuggestions(false);
-    }
-  };
-
-  const selectLocation = (lat: number, lon: number, name: string) => {
-    onLocationChange(lat, lon);
-    setSearchCity(name);
-    setSuggestions([]);
-
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.flyTo([lat, lon], 13);
-
-      if (markerRef.current) {
-        markerRef.current.setLatLng([lat, lon]);
-      } else {
-        const icon = L.icon({
-          iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
-          shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
-          iconSize: [32, 48],
-          iconAnchor: [16, 48],
-          shadowSize: [50, 50]
-        });
-        markerRef.current = L.marker([lat, lon], { icon }).addTo(mapInstanceRef.current);
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&countrycodes=in&limit=5&q=${encodeURIComponent(q)}`,
+          { signal: controller.signal }
+        );
+        setSuggestions(res.ok ? await res.json() : []);
+      } catch {
+        if (!controller.signal.aborted) setSuggestions([]);
+      } finally {
+        if (!controller.signal.aborted) setSearching(false);
       }
-    }
+    }, 600);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query]);
+
+  const select = (s: Suggestion) => {
+    const point: L.LatLngTuple = [parseFloat(s.lat), parseFloat(s.lon)];
+    onChangeRef.current(point[0], point[1]);
+    mapRef.current?.setView(point, 15);
+    setQuery(s.display_name.split(",").slice(0, 2).join(","));
+    setSuggestions([]);
   };
 
   return (
-    <div>
-      <div style={{ marginBottom: "16px" }}>
-        <label style={{
-          display: "block",
-          marginBottom: "8px",
-          color: "#cbd5e1",
-          fontWeight: "600",
-          fontSize: "14px"
-        }}>
-          🔍 Search Location or Click on Map
-        </label>
-        <div style={{ position: "relative", marginBottom: "8px" }}>
+    <div className="map-picker">
+      <label htmlFor="map-search">Search an address, or click the map to drop a pin</label>
+      <div className="map-search">
+        <div className="input-with-icon">
+          <Search size={16} aria-hidden="true" />
           <input
+            id="map-search"
             type="text"
-            value={searchCity}
-            onChange={(e) => {
-              setSearchCity(e.target.value);
-              searchLocation(e.target.value);
-            }}
-            placeholder="Search for city or area..."
-            style={{
-              width: "100%",
-              padding: "10px 12px",
-              background: "rgba(15, 23, 42, 0.5)",
-              border: "1px solid rgba(102, 126, 234, 0.3)",
-              borderRadius: "8px",
-              color: "#f1f5f9",
-              fontSize: "14px",
-              outline: "none",
-              transition: "all 0.3s ease"
-            }}
-            onFocus={(e) => {
-              (e.currentTarget as HTMLInputElement).style.borderColor = "#667eea";
-              (e.currentTarget as HTMLInputElement).style.boxShadow = "0 0 12px rgba(102, 126, 234, 0.3)";
-            }}
-            onBlur={(e) => {
-              (e.currentTarget as HTMLInputElement).style.borderColor = "rgba(102, 126, 234, 0.3)";
-              (e.currentTarget as HTMLInputElement).style.boxShadow = "none";
-            }}
+            autoComplete="off"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="e.g. Zoo Road, Guwahati"
+            aria-autocomplete="list"
+            aria-controls="map-suggestions"
           />
-
-          {/* Suggestions Dropdown */}
-          {suggestions.length > 0 && (
-            <div style={{
-              position: "absolute",
-              top: "100%",
-              left: 0,
-              right: 0,
-              background: "rgba(15, 23, 42, 0.95)",
-              border: "1px solid rgba(102, 126, 234, 0.3)",
-              borderRadius: "8px",
-              marginTop: "4px",
-              maxHeight: "200px",
-              overflowY: "auto",
-              zIndex: 1000
-            }}>
-              {suggestions.map((suggestion, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => {
-                    selectLocation(
-                      parseFloat(suggestion.lat),
-                      parseFloat(suggestion.lon),
-                      suggestion.display_name
-                    );
-                  }}
-                  style={{
-                    padding: "10px 12px",
-                    cursor: "pointer",
-                    borderBottom: idx < suggestions.length - 1 ? "1px solid rgba(102, 126, 234, 0.1)" : "none",
-                    transition: "background 0.2s ease"
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLDivElement).style.background = "rgba(102, 126, 234, 0.2)";
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLDivElement).style.background = "transparent";
-                  }}
-                >
-                  <p style={{ margin: "0", color: "#f1f5f9", fontSize: "13px", fontWeight: "500" }}>
-                    📍 {suggestion.display_name.split(",")[0]}
-                  </p>
-                  <p style={{ margin: "2px 0 0 0", color: "#94a3b8", fontSize: "11px" }}>
-                    {suggestion.display_name.split(",").slice(1, 3).join(",")}
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {loadingSuggestions && (
-            <div style={{
-              position: "absolute",
-              top: "100%",
-              left: 0,
-              right: 0,
-              background: "rgba(15, 23, 42, 0.95)",
-              border: "1px solid rgba(102, 126, 234, 0.3)",
-              borderRadius: "8px",
-              marginTop: "4px",
-              padding: "12px",
-              color: "#94a3b8",
-              fontSize: "13px"
-            }}>
-              Searching...
-            </div>
-          )}
         </div>
-
-        <p style={{
-          margin: "0",
-          color: "#94a3b8",
-          fontSize: "12px",
-          fontStyle: "italic"
-        }}>
-          💡 Tip: Click on the map to set exact location or search above
-        </p>
+        {(suggestions.length > 0 || searching) && (
+          <ul id="map-suggestions" className="map-suggestions" role="listbox">
+            {searching && suggestions.length === 0 ? (
+              <li className="map-suggestion muted">Searching…</li>
+            ) : (
+              suggestions.map((s) => (
+                <li key={s.place_id}>
+                  <button type="button" className="map-suggestion" onClick={() => select(s)}>
+                    <strong>{s.display_name.split(",")[0]}</strong>
+                    <span>{s.display_name.split(",").slice(1, 4).join(",")}</span>
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        )}
       </div>
 
-      <div 
-        ref={mapContainerRef}
-        style={{
-          borderRadius: "12px",
-          overflow: "hidden",
-          border: "1px solid rgba(102, 126, 234, 0.2)",
-          boxShadow: "0 8px 24px rgba(102, 126, 234, 0.15)",
-          height: "350px",
-          marginBottom: "16px",
-          width: "100%"
-        }}
-      />
+      <div ref={containerRef} className="map-canvas" />
 
-      {/* Coordinates Display */}
-      {latitude && longitude && (
-        <div style={{
-          padding: "12px 16px",
-          background: "linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)",
-          border: "1px solid rgba(102, 126, 234, 0.2)",
-          borderRadius: "8px",
-          fontSize: "13px",
-          color: "#cbd5e1"
-        }}>
-          <p style={{ margin: "0" }}>
-            📐 <strong>Latitude:</strong> <span style={{ color: "#667eea" }}>{Number(latitude).toFixed(6)}</span>
-          </p>
-          <p style={{ margin: "4px 0 0 0" }}>
-            📐 <strong>Longitude:</strong> <span style={{ color: "#667eea" }}>{Number(longitude).toFixed(6)}</span>
-          </p>
-        </div>
-      )}
+      <p className="field-hint inline-icon">
+        <MapPin size={13} aria-hidden="true" />
+        {hasPoint ? (
+          <span className="mono">{lat.toFixed(5)}, {lon.toFixed(5)}</span>
+        ) : (
+          "No location selected yet"
+        )}
+      </p>
     </div>
   );
 };
 
 export default MapPicker;
-
-

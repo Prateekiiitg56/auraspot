@@ -1,18 +1,17 @@
 const express = require("express");
 const router = express.Router();
-const User = require("../models/User");
+const Notification = require("../models/Notification");
 const Property = require("../models/Property");
 const RentAgreement = require("../models/RentAgreement");
 const Maintenance = require("../models/Maintenance");
-const Notification = require("../models/Notification");
+const { requireAuth, requireSelfEmail } = require("../middleware/auth");
+
+router.use(requireAuth);
 
 // Get analytics for an owner
-router.get("/owner/:email", async (req, res) => {
+router.get("/owner/:email", requireSelfEmail(), async (req, res) => {
   try {
-    const owner = await User.findOne({ email: req.params.email });
-    if (!owner) {
-      return res.status(404).json({ message: "Owner not found" });
-    }
+    const owner = req.user;
 
     // Get all properties owned by this user
     const properties = await Property.find({ owner: owner._id });
@@ -21,7 +20,7 @@ router.get("/owner/:email", async (req, res) => {
     // ========== RENT ANALYTICS ==========
     const rentAgreements = await RentAgreement.find({
       owner: owner._id,
-      status: { $in: ["ACTIVE", "COMPLETED"] }
+      status: { $in: ["ACTIVE", "COMPLETED", "TERMINATED"] }
     });
 
     // Calculate monthly rent collected (current month)
@@ -123,45 +122,11 @@ router.get("/owner/:email", async (req, res) => {
       ? Math.round((occupiedProperties / totalProperties) * 100) 
       : 0;
 
-    // ========== RESPONSE TIME ANALYTICS ==========
-    // Calculate average response time for property requests
-    const notifications = await Notification.find({
+    // ========== OPEN REQUESTS ==========
+    const pendingRequests = await Notification.countDocuments({
       to: owner._id,
-      action: "REQUEST"
-    }).sort({ createdAt: -1 });
-
-    let avgResponseTime = 0;
-    let respondedCount = 0;
-
-    // Check how quickly owner responded to requests (property status changed from REQUESTED)
-    for (const notif of notifications) {
-      if (notif.property) {
-        const property = await Property.findById(notif.property);
-        if (property && property.status !== "REQUESTED") {
-          // Assume response happened when status changed
-          // We'll use updatedAt as proxy for response time
-          const requestTime = new Date(notif.createdAt);
-          const responseTime = new Date(property.updatedAt);
-          const diff = responseTime - requestTime;
-          
-          if (diff > 0 && diff < 7 * 24 * 60 * 60 * 1000) { // Within 7 days
-            avgResponseTime += diff;
-            respondedCount++;
-          }
-        }
-      }
-    }
-
-    if (respondedCount > 0) {
-      avgResponseTime = Math.round(avgResponseTime / respondedCount / (1000 * 60 * 60)); // hours
-    }
-
-    // Pending requests count
-    const pendingRequests = notifications.filter(n => {
-      return n.property && properties.find(p => 
-        p._id.toString() === n.property.toString() && p.status === "REQUESTED"
-      );
-    }).length;
+      action: { $in: ["RENT", "BUY"] }
+    });
 
     // ========== PROPERTY TYPE BREAKDOWN ==========
     const propertyTypes = {};
@@ -194,10 +159,8 @@ router.get("/owner/:email", async (req, res) => {
         requested: requestedProperties,
         rate: occupancyRate
       },
-      response: {
-        avgResponseHours: avgResponseTime,
-        pendingRequests,
-        totalResponded: respondedCount
+      requests: {
+        pending: pendingRequests
       },
       propertyTypes
     });
@@ -205,37 +168,6 @@ router.get("/owner/:email", async (req, res) => {
   } catch (err) {
     console.error("ANALYTICS ERROR:", err);
     res.status(500).json({ message: "Failed to load analytics" });
-  }
-});
-
-// Get quick stats for dashboard header
-router.get("/quick/:email", async (req, res) => {
-  try {
-    const owner = await User.findOne({ email: req.params.email });
-    if (!owner) {
-      return res.status(404).json({ message: "Owner not found" });
-    }
-
-    const properties = await Property.find({ owner: owner._id });
-    const activeAgreements = await RentAgreement.countDocuments({ 
-      owner: owner._id, 
-      status: "ACTIVE" 
-    });
-    const pendingMaintenance = await Maintenance.countDocuments({ 
-      owner: owner._id, 
-      status: { $in: ["PENDING", "APPROVED", "IN_PROGRESS"] }
-    });
-
-    res.json({
-      totalProperties: properties.length,
-      activeRentals: activeAgreements,
-      pendingMaintenance,
-      occupiedCount: properties.filter(p => p.status === "BOOKED" || p.status === "SOLD").length
-    });
-
-  } catch (err) {
-    console.error("QUICK STATS ERROR:", err);
-    res.status(500).json({ message: "Failed to load stats" });
   }
 });
 

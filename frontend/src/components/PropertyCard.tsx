@@ -1,147 +1,128 @@
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { memo } from "react";
-import { getImageUrl } from "../services/api";
-import VerificationStamp from "./VerificationStamp";
+import { MapPin, Images, ShieldCheck, BadgeCheck } from "lucide-react";
+import { formatINR, getPropertyImage, getImageUrl } from "../services/api";
+import SaveButton from "./SaveButton";
 
-interface PropertyCardProps {
-  property: {
-    _id: string;
-    title: string;
-    price: number;
-    city?: string;
-    area?: string;
-    type: string;
-    purpose: string;
-    image?: string;
-    images?: string[];
-    propertyScore?: number;
-    scoreDescription?: string;
-    owner?: {
-      trustBadge?: string;
-      dealsClosed?: number;
-    };
-    aiInsights?: {
-      score?: number;
-      priceRating?: string;
-      locationQuality?: string;
-      fraudRisk?: string;
-      summary?: string;
-    };
+export interface PropertyCardData {
+  _id: string;
+  title: string;
+  price: number;
+  city?: string;
+  area?: string;
+  type: string;
+  purpose: string;
+  status?: string;
+  image?: string;
+  images?: string[];
+  bhk?: number;
+  propertyScore?: number;
+  owner?: {
+    name?: string;
+    verified?: boolean;
+    trustBadge?: string;
+  };
+  aiInsights?: {
+    score?: number;
+    priceRating?: string;
+    fraudRisk?: string;
   };
 }
 
-const FALLBACK_PHOTO = "https://images.unsplash.com/photo-1560518883-ce09059eeffa?auto=format&fit=crop&w=800&q=80";
+const TYPE_LABEL: Record<string, string> = {
+  ROOM: "Room",
+  PG: "PG",
+  HOSTEL: "Hostel",
+  FLAT: "Flat",
+  HOME: "House"
+};
 
-const PropertyCard = memo(({ property }: PropertyCardProps) => {
-  const navigate = useNavigate();
+const PRICE_LABEL: Record<string, string> = {
+  EXCELLENT: "Great price",
+  GOOD: "Good price",
+  FAIR: "Fair price",
+  ABOVE_AVERAGE: "Above market",
+  OVERPRICED: "Overpriced",
+  VERY_OVERPRICED: "Overpriced",
+  SUSPICIOUS: "Unusually low"
+};
 
-  const score = property.aiInsights?.score || property.propertyScore || 87;
-  const fraudRisk = property.aiInsights?.fraudRisk || "Low Risk";
-  const priceRating = property.aiInsights?.priceRating || "Fair Market Price";
+const scoreTone = (score: number) => (score >= 75 ? "var(--verified)" : score >= 55 ? "var(--flag)" : "var(--brick)");
 
-  const displayImage = (property.images && property.images.length > 0)
-    ? getImageUrl(property.images[0])
-    : property.image
-      ? getImageUrl(property.image)
-      : FALLBACK_PHOTO;
-
-  const imageCount = property.images?.length || 1;
-  const cityArea = [property.area, property.city || "Guwahati"].filter(Boolean).join(", ");
+const PropertyCard = memo(({ property }: { property: PropertyCardData }) => {
+  const score = property.aiInsights?.score || property.propertyScore || 0;
+  const priceRating = property.aiInsights?.priceRating;
+  const fraudRisk = property.aiInsights?.fraudRisk;
+  const imageCount = property.images?.length || 0;
+  const location = [property.area, property.city].filter(Boolean).join(", ");
+  const typeLabel = TYPE_LABEL[property.type] || property.type;
+  const unavailable = property.status === "BOOKED" || property.status === "SOLD";
 
   return (
-    <div
-      className="paper-card deckle-edge property-card"
-      onClick={() => navigate(`/property/${property._id}`)}
-      style={{ padding: 0 }}
-    >
-      {/* 1. Header Stamp & Photo Container */}
-      <div className="property-img-container">
-        <img
-          src={displayImage}
-          className="property-img"
-          alt={`${property.title} - ${property.type} in ${property.city || "Guwahati"}`}
-          loading="lazy"
-          onError={(e) => {
-            (e.target as HTMLImageElement).src = FALLBACK_PHOTO;
-          }}
-        />
-
-        {/* Verification Stamp Badge Overlay */}
-        <div style={{ position: "absolute", top: "8px", right: "8px", zIndex: 6 }}>
-          <VerificationStamp size="sm" rotation={-4} />
-        </div>
-
-        {/* Photo Count Badge */}
-        {imageCount > 1 && (
-          <div className="mono" style={{
-            position: "absolute",
-            bottom: "8px",
-            left: "8px",
-            background: "rgba(20, 22, 27, 0.75)",
-            backdropFilter: "blur(6px)",
-            color: "#FFFFFF",
-            padding: "2px 8px",
-            borderRadius: "var(--radius-full)",
-            fontSize: "11px",
-            fontWeight: "500",
-            zIndex: 5
-          }}>
-            📷 {imageCount}
-          </div>
-        )}
-      </div>
-
-      {/* 2. Card Body with Survey Grade & Consolidated Spec */}
-      <div className="card-body" style={{ padding: "16px", display: "flex", flexDirection: "column", justifyContent: "space-between", flex: 1 }}>
-        <div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "4px" }}>
-            <h3 style={{ fontSize: "17px", margin: 0, fontFamily: "var(--font-serif)" }}>{property.title}</h3>
-            <span className="mono" style={{ fontSize: "18px", fontWeight: 700, color: "var(--blueprint)" }}>
-              {score}
+    <article className="paper-card property-card" style={{ padding: 0 }}>
+      <Link to={`/property/${property._id}`} className="property-card-link" aria-label={`${property.title}, ${formatINR(property.price)}`}>
+        <div className="property-img-container">
+          <img
+            src={getPropertyImage(property)}
+            className="property-img"
+            alt=""
+            loading="lazy"
+            onError={(e) => {
+              e.currentTarget.src = getImageUrl(null);
+            }}
+          />
+          {imageCount > 1 && (
+            <span className="img-chip mono">
+              <Images size={12} aria-hidden="true" /> {imageCount}
             </span>
+          )}
+          {unavailable && <span className="img-chip img-chip-status">{property.status === "SOLD" ? "Sold" : "Rented"}</span>}
+        </div>
+
+        <div className="card-body">
+          <div className="card-title-row">
+            <h3>{property.title}</h3>
+            {score > 0 && (
+              <span className="card-score mono" style={{ color: scoreTone(score) }} title="AuraSpot score out of 100">
+                {score}
+              </span>
+            )}
           </div>
 
-          <div className="property-spec-line" style={{ fontSize: "12.5px", color: "var(--ink-soft)", marginBottom: "8px" }}>
-            <span>{property.type}</span>
-            <span>·</span>
-            <span>{property.purpose === "RENT" ? "For Rent" : "For Sale"}</span>
-            <span>·</span>
-            <span>📍 {cityArea}</span>
+          <p className="property-spec-line">
+            {property.bhk ? `${property.bhk} BHK ${typeLabel}` : typeLabel} · {property.purpose === "RENT" ? "For rent" : "For sale"}
+          </p>
+          {location && (
+            <p className="property-spec-line inline-icon">
+              <MapPin size={13} aria-hidden="true" /> {location}
+            </p>
+          )}
+
+          <div className="price mono card-price">
+            {formatINR(property.price)}
+            {property.purpose === "RENT" && <span className="card-price-unit">/month</span>}
           </div>
 
-          <div className="price mono" style={{ fontSize: "18px", fontWeight: 700, color: "var(--ink)", marginBottom: "10px" }}>
-            ₹{property.price.toLocaleString()}
-            {property.purpose === "RENT" ? "/mo" : ""}
+          <div className="card-tags">
+            {property.owner?.verified && (
+              <span className="tag tag-green inline-icon">
+                <BadgeCheck size={12} aria-hidden="true" /> Verified owner
+              </span>
+            )}
+            {fraudRisk === "LOW" && (
+              <span className="tag tag-green inline-icon">
+                <ShieldCheck size={12} aria-hidden="true" /> Low risk
+              </span>
+            )}
+            {(fraudRisk === "MEDIUM" || fraudRisk === "HIGH") && (
+              <span className="tag tag-amber">{fraudRisk === "HIGH" ? "High risk" : "Review carefully"}</span>
+            )}
+            {priceRating && PRICE_LABEL[priceRating] && <span className="tag">{PRICE_LABEL[priceRating]}</span>}
           </div>
         </div>
-
-        {/* Status Badges */}
-        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
-          <span className="tag" style={{ background: "var(--paper)", border: "1px solid var(--verified)", color: "var(--verified)", fontSize: "10.5px" }}>
-            🛡️ {fraudRisk}
-          </span>
-          <span className="tag" style={{ background: "var(--paper)", border: "1px solid var(--flag)", color: "var(--flag)", fontSize: "10.5px" }}>
-            💰 {priceRating}
-          </span>
-        </div>
-      </div>
-
-      {/* 3. Hover Reveal Drawer */}
-      <div className="card-hover-drawer">
-        <div className="hover-drawer-header">
-          <span style={{ fontWeight: 600, color: "var(--verified)" }}>
-            ✓ Verified Landlord
-          </span>
-          <span className="mono" style={{ color: "var(--ink-soft)" }}>
-            ⭐ 4.9 (12 deals)
-          </span>
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: "var(--blueprint)", fontWeight: 600 }}>
-          <span>View Survey Breakdown</span>
-          <span>Quick Inspection →</span>
-        </div>
-      </div>
-    </div>
+      </Link>
+      <SaveButton propertyId={property._id} />
+    </article>
   );
 });
 

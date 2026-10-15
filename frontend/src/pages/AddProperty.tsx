@@ -1,536 +1,420 @@
-import { useState, useRef } from "react";
-import { API } from "../services/api";
-import { auth } from "../services/firebase";
+import { useEffect, useRef, useState } from "react";
+import type { ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
+import { ArrowLeft, ArrowRight, Check, Circle, ImagePlus, X } from "lucide-react";
+import { apiFetch, formatINR, readError } from "../services/api";
 import MapPicker from "../components/MapPicker";
+import { toast } from "../components/Feedback";
 
-const STEPS = [
-  { id: 1, name: "Basics" },
-  { id: 2, name: "Location" },
-  { id: 3, name: "Photos & Features" },
-  { id: 4, name: "Pricing" },
-  { id: 5, name: "Review & Audit" }
-];
+const STEPS = ["Basics", "Location", "Photos & amenities", "Price & details", "Review"];
 
-const COMMON_AMENITIES = [
-  "Power Backup",
+const AMENITIES = [
   "Wi-Fi",
-  "Covered Parking",
+  "Air Conditioning",
+  "Power Backup",
+  "Parking",
   "Water Supply",
   "Security / CCTV",
+  "Lift",
+  "Gym",
   "Balcony",
-  "Air Conditioning",
-  "Gym / Lift"
+  "Washing Machine",
+  "Meals",
+  "Housekeeping"
 ];
+
+const MAX_IMAGES = 5;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+type Form = {
+  title: string;
+  type: string;
+  purpose: string;
+  price: string;
+  city: string;
+  area: string;
+  latitude: string;
+  longitude: string;
+  description: string;
+  bhk: string;
+  sqft: string;
+  furnishing: string;
+};
+
+const INITIAL: Form = {
+  title: "",
+  type: "FLAT",
+  purpose: "RENT",
+  price: "",
+  city: "",
+  area: "",
+  latitude: "",
+  longitude: "",
+  description: "",
+  bhk: "",
+  sqft: "",
+  furnishing: "Unfurnished"
+};
+
+const FieldError = ({ id, message }: { id: string; message?: string }) =>
+  message ? <p id={id} className="inline-error-text" role="alert">{message}</p> : null;
 
 const AddProperty = () => {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [currentStep, setCurrentStep] = useState(1);
-  const [form, setForm] = useState({
-    title: "",
-    type: "FLAT",
-    purpose: "RENT",
-    price: "",
-    city: "Guwahati",
-    area: "",
-    latitude: "26.18",
-    longitude: "91.75",
-    amenities: "",
-    description: ""
-  });
-
-  const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
-  const [images, setImages] = useState<File[]>([]);
-  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [step, setStep] = useState(0);
+  const [form, setForm] = useState<Form>(INITIAL);
+  const [amenities, setAmenities] = useState<string[]>([]);
+  const [images, setImages] = useState<{ file: File; url: string }[]>([]);
+  const [errors, setErrors] = useState<Partial<Record<keyof Form, string>>>({});
   const [dragActive, setDragActive] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  // Dynamic Live AI Score Calculation
-  const calculateLiveScore = () => {
-    let score = 65;
-    if (form.title.trim().length >= 10) score += 6;
-    if (form.type && form.purpose) score += 4;
-    if (form.city.trim() && form.area.trim()) score += 6;
-    if (form.latitude && form.longitude) score += 4;
-    if (images.length > 0) score += 5;
-    if (images.length >= 3) score += 4;
-    if (selectedAmenities.length > 0) score += 3;
-    if (selectedAmenities.length >= 3) score += 3;
-    if (form.description.trim().length >= 30) score += 4;
-    return Math.min(score, 98);
+  // Release preview URLs on unmount
+  const imagesRef = useRef(images);
+  imagesRef.current = images;
+  useEffect(() => () => imagesRef.current.forEach((i) => URL.revokeObjectURL(i.url)), []);
+
+  const set = (name: keyof Form, value: string) => {
+    setForm((f) => ({ ...f, [name]: value }));
+    if (errors[name]) setErrors((e) => ({ ...e, [name]: undefined }));
   };
+  const onChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    set(e.target.name as keyof Form, e.target.value);
 
-  const liveScore = calculateLiveScore();
-
-  // Image Upload Handling
-  const handleFiles = (files: File[]) => {
-    if (files.length + images.length > 5) {
-      alert("You can upload maximum 5 images");
-      return;
-    }
-    const newImages = [...images, ...files].slice(0, 5);
-    setImages(newImages);
-    const previews = newImages.map(file => URL.createObjectURL(file));
-    setImagePreviews(previews);
-  };
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    handleFiles(files);
+  const addFiles = (files: File[]) => {
+    const valid = files.filter((f) => f.type.startsWith("image/") && f.size <= MAX_IMAGE_BYTES);
+    if (valid.length < files.length) toast.error("Only images up to 5MB each can be uploaded.");
+    const room = MAX_IMAGES - images.length;
+    if (valid.length > room) toast.error(`You can add up to ${MAX_IMAGES} photos.`);
+    const added = valid.slice(0, Math.max(room, 0)).map((file) => ({ file, url: URL.createObjectURL(file) }));
+    setImages((list) => [...list, ...added]);
   };
 
   const removeImage = (index: number) => {
-    const newImages = images.filter((_, i) => i !== index);
-    setImages(newImages);
-    URL.revokeObjectURL(imagePreviews[index]);
-    const previews = newImages.map(file => URL.createObjectURL(file));
-    setImagePreviews(previews);
+    setImages((list) => {
+      URL.revokeObjectURL(list[index].url);
+      return list.filter((_, i) => i !== index);
+    });
   };
 
-  const toggleAmenity = (item: string) => {
-    let updated: string[];
-    if (selectedAmenities.includes(item)) {
-      updated = selectedAmenities.filter(a => a !== item);
-    } else {
-      updated = [...selectedAmenities, item];
+  const toggleAmenity = (item: string) =>
+    setAmenities((list) => (list.includes(item) ? list.filter((a) => a !== item) : [...list, item]));
+
+  const validate = (s: number) => {
+    const next: Partial<Record<keyof Form, string>> = {};
+    if (s === 0 && form.title.trim().length < 5) next.title = "Enter a descriptive title (at least 5 characters).";
+    if (s === 1) {
+      if (!form.city.trim()) next.city = "City is required.";
+      if (!form.area.trim()) next.area = "Locality is required.";
     }
-    setSelectedAmenities(updated);
-    setForm({ ...form, amenities: updated.join(", ") });
-  };
-
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
-  ) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-    if (errors[e.target.name]) {
-      setErrors({ ...errors, [e.target.name]: "" });
+    if (s === 3) {
+      if (!form.price || Number(form.price) < 500) next.price = "Enter a price of at least ₹500.";
+      if (form.bhk && (Number(form.bhk) < 1 || Number(form.bhk) > 20)) next.bhk = "Enter a valid number of bedrooms.";
     }
+    setErrors(next);
+    return Object.keys(next).length === 0;
   };
 
-  // Step Validation
-  const validateStep = (step: number) => {
-    const newErrors: Record<string, string> = {};
-    if (step === 1) {
-      if (!form.title.trim() || form.title.trim().length < 5) {
-        newErrors.title = "Enter a descriptive title with at least 5 characters.";
-      }
-      if (!form.type) newErrors.type = "Select property type.";
-      if (!form.purpose) newErrors.purpose = "Select property purpose.";
-    } else if (step === 2) {
-      if (!form.city.trim()) newErrors.city = "City is required.";
-      if (!form.area.trim()) newErrors.area = "Area or neighborhood locality is required.";
-    } else if (step === 4) {
-      if (!form.price || Number(form.price) < 500) {
-        newErrors.price = "Enter a valid price greater than ₹500.";
-      }
-    }
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
+  const goNext = () => validate(step) && setStep((s) => Math.min(s + 1, STEPS.length - 1));
+  const goBack = () => setStep((s) => Math.max(s - 1, 0));
 
-  const nextStep = () => {
-    if (validateStep(currentStep)) {
-      setCurrentStep(prev => Math.min(prev + 1, 5));
-    }
-  };
-
-  const prevStep = () => {
-    setCurrentStep(prev => Math.max(prev - 1, 1));
-  };
-
-  // Final Form Submission
   const submit = async () => {
-    if (!auth.currentUser) {
-      alert("Please login first");
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const formData = new FormData();
-      formData.append("title", form.title);
-      formData.append("type", form.type);
-      formData.append("purpose", form.purpose);
-      formData.append("price", form.price);
-      formData.append("city", form.city);
-      formData.append("area", form.area);
-      formData.append("latitude", form.latitude);
-      formData.append("longitude", form.longitude);
-      formData.append("amenities", form.amenities);
-      formData.append("description", form.description);
-
-      images.forEach(img => formData.append("images", img));
-
-      const token = await auth.currentUser.getIdToken();
-      const res = await fetch(`${API}/properties`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData
-      });
-
-      if (res.ok) {
-        navigate("/explore");
-      } else {
-        const data = await res.json();
-        alert(data.error || "Failed to add property");
+    for (const s of [0, 1, 3]) {
+      if (!validate(s)) {
+        setStep(s);
+        return;
       }
+    }
+    setSubmitting(true);
+    try {
+      const data = new FormData();
+      (Object.keys(form) as (keyof Form)[]).forEach((key) => {
+        if (form[key] !== "") data.append(key, form[key].trim());
+      });
+      data.append("amenities", JSON.stringify(amenities));
+      images.forEach((img) => data.append("images", img.file));
+
+      const res = await apiFetch("/properties", { method: "POST", body: data });
+      if (!res.ok) throw new Error(await readError(res, "Could not publish the listing"));
+      const created = await res.json();
+      toast.success("Listing published. AI insights will be ready in a minute.");
+      navigate(`/property/${created._id}`);
     } catch (err) {
-      console.error(err);
-      alert("Error creating property");
+      toast.error(err instanceof Error ? err.message : "Could not publish the listing");
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
+
+  const checklist = [
+    { label: "Descriptive title", done: form.title.trim().length >= 10 },
+    { label: "Locality and map pin", done: !!form.area.trim() && !!form.latitude },
+    { label: "At least 3 photos", done: images.length >= 3 },
+    { label: "3 or more amenities", done: amenities.length >= 3 },
+    { label: "Size and furnishing", done: !!form.sqft || !!form.bhk },
+    { label: "Description of 50+ characters", done: form.description.trim().length >= 50 }
+  ];
+  const completeness = Math.round((checklist.filter((c) => c.done).length / checklist.length) * 100);
+  const isResidential = form.type === "FLAT" || form.type === "HOME";
 
   return (
-    <div className="wrap" style={{ padding: "40px 32px" }}>
-      {/* Page Header */}
-      <div style={{ marginBottom: "32px", borderBottom: "1px solid var(--color-border)", paddingBottom: "20px" }}>
-        <h1 style={{ marginBottom: "6px" }}>Post a Verified Property</h1>
-        <p style={{ color: "var(--color-text-muted)", fontSize: "15px" }}>
-          AuraSpot audits your property signals live to ensure maximum visibility & trust.
-        </p>
+    <div className="wrap page-section">
+      <div className="page-header">
+        <div>
+          <p className="eyebrow">New listing</p>
+          <h1>List your property</h1>
+          <p>Complete listings rank higher and receive more serious enquiries.</p>
+        </div>
       </div>
 
-      {/* Progress Wizard Bar */}
-      <div className="wizard-progress-bar">
-        {STEPS.map(step => (
-          <div
-            key={step.id}
-            className={`wizard-step-item ${currentStep === step.id ? "active" : ""} ${currentStep > step.id ? "completed" : ""}`}
+      <ol className="wizard-progress-bar" aria-label="Progress">
+        {STEPS.map((name, i) => (
+          <li
+            key={name}
+            className={`wizard-step-item ${step === i ? "active" : ""} ${step > i ? "completed" : ""}`}
+            aria-current={step === i ? "step" : undefined}
           >
-            <div className="step-circle">
-              {currentStep > step.id ? "✓" : step.id}
-            </div>
-            <span>{step.name}</span>
-          </div>
+            <span className="step-circle">{step > i ? <Check size={14} aria-hidden="true" /> : i + 1}</span>
+            <span>{name}</span>
+          </li>
         ))}
-      </div>
+      </ol>
 
-      {/* 2-Column Wizard Layout: Form Steps (Left) + Live AI Score Preview (Right) */}
       <div className="wizard-container">
-        {/* Left Side: Active Form Step */}
-        <div className="card" style={{ padding: "32px" }}>
-          {/* STEP 1: BASICS */}
-          {currentStep === 1 && (
-            <div>
-              <h2 style={{ fontSize: "22px", marginBottom: "8px" }}>Step 1: Property Basics</h2>
-              <p style={{ color: "var(--color-text-muted)", fontSize: "14px", marginBottom: "24px" }}>
-                Basic property information for tenant discovery.
-              </p>
-
-              <div style={{ marginBottom: "20px" }}>
-                <label>Property Title *</label>
+        <form className="card wizard-card" onSubmit={(e) => e.preventDefault()} noValidate>
+          {step === 0 && (
+            <fieldset>
+              <legend className="wizard-legend">Property basics</legend>
+              <div className="field">
+                <label htmlFor="title">Listing title</label>
                 <input
-                  type="text"
+                  id="title"
                   name="title"
-                  placeholder="e.g. 2BHK Riverside Flat with Balcony"
+                  type="text"
+                  maxLength={120}
+                  placeholder="e.g. Sunny 2BHK flat with balcony near Zoo Road"
                   value={form.title}
-                  onChange={handleChange}
+                  onChange={onChange}
+                  aria-invalid={!!errors.title}
+                  aria-describedby="title-error"
                 />
-                {errors.title && <div className="inline-error-text">⚠️ {errors.title}</div>}
+                <FieldError id="title-error" message={errors.title} />
               </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "20px" }}>
-                <div>
-                  <label>Property Type *</label>
-                  <select name="type" value={form.type} onChange={handleChange}>
+              <div className="form-row">
+                <div className="field">
+                  <label htmlFor="type">Property type</label>
+                  <select id="type" name="type" value={form.type} onChange={onChange}>
                     <option value="FLAT">Flat / Apartment</option>
-                    <option value="PG">PG / Hostel</option>
-                    <option value="HOME">Independent House</option>
+                    <option value="HOME">Independent house</option>
+                    <option value="ROOM">Room</option>
+                    <option value="PG">PG</option>
+                    <option value="HOSTEL">Hostel</option>
                   </select>
                 </div>
-                <div>
-                  <label>Listing Purpose *</label>
-                  <select name="purpose" value={form.purpose} onChange={handleChange}>
-                    <option value="RENT">For Rent</option>
-                    <option value="SALE">For Sale</option>
+                <div className="field">
+                  <label htmlFor="purpose">Listing for</label>
+                  <select id="purpose" name="purpose" value={form.purpose} onChange={onChange}>
+                    <option value="RENT">Rent</option>
+                    <option value="SALE">Sale</option>
                   </select>
                 </div>
               </div>
-            </div>
+            </fieldset>
           )}
 
-          {/* STEP 2: LOCATION */}
-          {currentStep === 2 && (
-            <div>
-              <h2 style={{ fontSize: "22px", marginBottom: "8px" }}>Step 2: Location Details</h2>
-              <p style={{ color: "var(--color-text-muted)", fontSize: "14px", marginBottom: "24px" }}>
-                Specify city, locality, and pin point location on the map.
-              </p>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "20px" }}>
-                <div>
-                  <label>City *</label>
-                  <input
-                    type="text"
-                    name="city"
-                    placeholder="e.g. Guwahati"
-                    value={form.city}
-                    onChange={handleChange}
-                  />
-                  {errors.city && <div className="inline-error-text">⚠️ {errors.city}</div>}
+          {step === 1 && (
+            <fieldset>
+              <legend className="wizard-legend">Location</legend>
+              <div className="form-row">
+                <div className="field">
+                  <label htmlFor="city">City</label>
+                  <input id="city" name="city" type="text" maxLength={80} placeholder="e.g. Guwahati" value={form.city} onChange={onChange} aria-invalid={!!errors.city} aria-describedby="city-error" />
+                  <FieldError id="city-error" message={errors.city} />
                 </div>
-                <div>
-                  <label>Area / Locality *</label>
-                  <input
-                    type="text"
-                    name="area"
-                    placeholder="e.g. Uzan Bazar"
-                    value={form.area}
-                    onChange={handleChange}
-                  />
-                  {errors.area && <div className="inline-error-text">⚠️ {errors.area}</div>}
+                <div className="field">
+                  <label htmlFor="area">Locality</label>
+                  <input id="area" name="area" type="text" maxLength={120} placeholder="e.g. Uzan Bazar" value={form.area} onChange={onChange} aria-invalid={!!errors.area} aria-describedby="area-error" />
+                  <FieldError id="area-error" message={errors.area} />
                 </div>
               </div>
-
-              <div style={{ marginBottom: "20px" }}>
-                <label>Pinpoint Location on Map *</label>
-                <div style={{ height: "260px", borderRadius: "var(--radius-lg)", overflow: "hidden", border: "1px solid var(--color-border)" }}>
-                  <MapPicker
-                    lat={Number(form.latitude)}
-                    lng={Number(form.longitude)}
-                    onChange={(lat, lng) => setForm({ ...form, latitude: String(lat), longitude: String(lng) })}
-                  />
-                </div>
-              </div>
-            </div>
+              <MapPicker
+                latitude={form.latitude}
+                longitude={form.longitude}
+                onLocationChange={(lat, lng) => setForm((f) => ({ ...f, latitude: String(lat), longitude: String(lng) }))}
+              />
+            </fieldset>
           )}
 
-          {/* STEP 3: PHOTOS & AMENITIES */}
-          {currentStep === 3 && (
-            <div>
-              <h2 style={{ fontSize: "22px", marginBottom: "8px" }}>Step 3: Photos & Amenities</h2>
-              <p style={{ color: "var(--color-text-muted)", fontSize: "14px", marginBottom: "24px" }}>
-                Listings with 3+ real photos receive 40% higher AuraScores.
-              </p>
-
-              {/* Styled Drag-and-Drop Photo Dropzone */}
-              <div style={{ marginBottom: "24px" }}>
-                <label>Upload Property Photos (Max 5)</label>
-                <div
-                  className={`upload-dropzone ${dragActive ? "drag-active" : ""}`}
-                  onClick={() => fileInputRef.current?.click()}
-                  onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
-                  onDragLeave={() => setDragActive(false)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setDragActive(false);
-                    if (e.dataTransfer.files) {
-                      handleFiles(Array.from(e.dataTransfer.files));
-                    }
+          {step === 2 && (
+            <fieldset>
+              <legend className="wizard-legend">Photos & amenities</legend>
+              <label id="photos-label">Photos ({images.length}/{MAX_IMAGES})</label>
+              <div
+                className={`upload-dropzone ${dragActive ? "drag-active" : ""}`}
+                role="button"
+                tabIndex={0}
+                aria-labelledby="photos-label"
+                onClick={() => fileInputRef.current?.click()}
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && fileInputRef.current?.click()}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragActive(true);
+                }}
+                onDragLeave={() => setDragActive(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragActive(false);
+                  addFiles(Array.from(e.dataTransfer.files));
+                }}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  hidden
+                  onChange={(e) => {
+                    addFiles(Array.from(e.target.files || []));
+                    e.target.value = "";
                   }}
-                >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    accept="image/*"
-                    onChange={handleImageChange}
-                    style={{ display: "none" }}
-                  />
-                  <div style={{ fontSize: "28px", marginBottom: "8px" }}>📷</div>
-                  <div style={{ fontSize: "14px", fontWeight: 600, color: "var(--color-text-main)" }}>
-                    Drag & Drop photos here, or <span style={{ color: "var(--color-primary)" }}>Browse</span>
-                  </div>
-                  <div style={{ fontSize: "12px", color: "var(--color-text-caption)", marginTop: "4px" }}>
-                    PNG, JPG or WEBP up to 5MB each ({images.length}/5 uploaded)
-                  </div>
-                </div>
-
-                {/* Photo Thumbnail Preview Grid */}
-                {imagePreviews.length > 0 && (
-                  <div className="dropzone-preview-grid">
-                    {imagePreviews.map((src, i) => (
-                      <div key={i} className="dropzone-thumb-container">
-                        <img src={src} className="dropzone-thumb-img" alt={`Upload ${i}`} />
-                        <button
-                          type="button"
-                          className="dropzone-thumb-remove"
-                          onClick={() => removeImage(i)}
-                          title="Remove photo"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                />
+                <ImagePlus size={28} aria-hidden="true" />
+                <strong>Drag photos here or <span className="text-link">browse</span></strong>
+                <span className="muted">JPG, PNG or WEBP · up to 5MB each · first photo is the cover</span>
               </div>
 
-              {/* Amenities Selection Chips */}
-              <div>
-                <label style={{ marginBottom: "10px" }}>Key Amenities</label>
-                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                  {COMMON_AMENITIES.map(item => {
-                    const selected = selectedAmenities.includes(item);
+              {images.length > 0 && (
+                <div className="dropzone-preview-grid">
+                  {images.map((img, i) => (
+                    <div key={img.url} className="dropzone-thumb-container">
+                      <img src={img.url} className="dropzone-thumb-img" alt={`Photo ${i + 1}`} />
+                      {i === 0 && <span className="thumb-cover">Cover</span>}
+                      <button type="button" className="dropzone-thumb-remove" onClick={() => removeImage(i)} aria-label={`Remove photo ${i + 1}`}>
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <fieldset className="chip-group">
+                <legend>Amenities</legend>
+                <div className="chip-list">
+                  {AMENITIES.map((item) => {
+                    const selected = amenities.includes(item);
                     return (
-                      <button
-                        key={item}
-                        type="button"
-                        className={`tag ${selected ? "tag-green" : ""}`}
-                        style={{
-                          cursor: "pointer",
-                          padding: "6px 12px",
-                          fontSize: "12.5px",
-                          background: selected ? "var(--color-success-bg)" : "var(--color-bg-subtle)",
-                          borderColor: selected ? "var(--color-success-border)" : "var(--color-border)",
-                          color: selected ? "var(--color-success)" : "var(--color-text-muted)"
-                        }}
-                        onClick={() => toggleAmenity(item)}
-                      >
-                        {selected ? "✓ " : "+ "}{item}
+                      <button key={item} type="button" className={`chip ${selected ? "selected" : ""}`} aria-pressed={selected} onClick={() => toggleAmenity(item)}>
+                        {selected && <Check size={13} aria-hidden="true" />}
+                        {item}
                       </button>
                     );
                   })}
                 </div>
-              </div>
-            </div>
+              </fieldset>
+            </fieldset>
           )}
 
-          {/* STEP 4: PRICING & TERMS */}
-          {currentStep === 4 && (
-            <div>
-              <h2 style={{ fontSize: "22px", marginBottom: "8px" }}>Step 4: Pricing & Description</h2>
-              <p style={{ color: "var(--color-text-muted)", fontSize: "14px", marginBottom: "24px" }}>
-                Transparent pricing and accurate details help AuraSpot audit fair market rent.
-              </p>
-
-              <div style={{ marginBottom: "20px" }}>
-                <label>Monthly Rent / Sale Price (₹) *</label>
-                <input
-                  type="number"
-                  name="price"
-                  placeholder="e.g. 18500"
-                  value={form.price}
-                  onChange={handleChange}
-                />
-                {errors.price && <div className="inline-error-text">⚠️ {errors.price}</div>}
+          {step === 3 && (
+            <fieldset>
+              <legend className="wizard-legend">Price & details</legend>
+              <div className="field">
+                <label htmlFor="price">{form.purpose === "RENT" ? "Monthly rent (₹)" : "Sale price (₹)"}</label>
+                <input id="price" name="price" type="number" min={500} inputMode="numeric" placeholder={form.purpose === "RENT" ? "e.g. 18500" : "e.g. 4500000"} value={form.price} onChange={onChange} aria-invalid={!!errors.price} aria-describedby="price-error" />
+                <FieldError id="price-error" message={errors.price} />
               </div>
-
-              <div style={{ marginBottom: "20px" }}>
-                <label>Property Description</label>
+              <div className="form-row form-row-3">
+                {isResidential && (
+                  <div className="field">
+                    <label htmlFor="bhk">Bedrooms (BHK)</label>
+                    <input id="bhk" name="bhk" type="number" min={1} max={20} value={form.bhk} onChange={onChange} aria-invalid={!!errors.bhk} aria-describedby="bhk-error" />
+                    <FieldError id="bhk-error" message={errors.bhk} />
+                  </div>
+                )}
+                <div className="field">
+                  <label htmlFor="sqft">Area (sq ft)</label>
+                  <input id="sqft" name="sqft" type="number" min={1} value={form.sqft} onChange={onChange} />
+                </div>
+                <div className="field">
+                  <label htmlFor="furnishing">Furnishing</label>
+                  <select id="furnishing" name="furnishing" value={form.furnishing} onChange={onChange}>
+                    <option>Unfurnished</option>
+                    <option>Semi-Furnished</option>
+                    <option>Furnished</option>
+                  </select>
+                </div>
+              </div>
+              <div className="field">
+                <label htmlFor="description">Description</label>
                 <textarea
+                  id="description"
                   name="description"
-                  rows={4}
-                  placeholder="Describe lease terms, deposit details, furnishings, and tenant preferences..."
+                  rows={5}
+                  maxLength={3000}
+                  placeholder="Deposit, lease terms, nearby landmarks, who the place suits…"
                   value={form.description}
-                  onChange={handleChange}
+                  onChange={onChange}
                 />
+                <p className="field-hint">{form.description.length}/3000</p>
               </div>
-            </div>
+            </fieldset>
           )}
 
-          {/* STEP 5: REVIEW & AUDIT */}
-          {currentStep === 5 && (
-            <div>
-              <h2 style={{ fontSize: "22px", marginBottom: "8px" }}>Step 5: Review & Audit</h2>
-              <p style={{ color: "var(--color-text-muted)", fontSize: "14px", marginBottom: "24px" }}>
-                Verify details before submitting your property for AI scoring.
-              </p>
-
-              <div style={{
-                background: "var(--color-bg-subtle)",
-                border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius-lg)",
-                padding: "20px",
-                marginBottom: "24px"
-              }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "12px", borderBottom: "1px solid var(--color-border)", paddingBottom: "10px" }}>
-                  <span style={{ fontWeight: 600 }}>{form.title || "Untitled Property"}</span>
-                  <span className="mono" style={{ color: "var(--color-primary)", fontWeight: 600 }}>₹{Number(form.price || 0).toLocaleString()}</span>
-                </div>
-                <div style={{ fontSize: "13px", color: "var(--color-text-muted)", display: "flex", flexDirection: "column", gap: "6px" }}>
-                  <div>Type: <b>{form.type} ({form.purpose})</b></div>
-                  <div>Location: <b>{form.area}, {form.city}</b></div>
-                  <div>Photos: <b>{images.length} uploaded</b></div>
-                  <div>Amenities: <b>{selectedAmenities.join(", ") || "None specified"}</b></div>
-                </div>
-              </div>
-            </div>
+          {step === 4 && (
+            <section aria-labelledby="review-title">
+              <h2 id="review-title" className="wizard-legend">Review your listing</h2>
+              <dl className="review-list">
+                <div><dt>Title</dt><dd>{form.title}</dd></div>
+                <div><dt>Type</dt><dd>{form.type} for {form.purpose === "RENT" ? "rent" : "sale"}</dd></div>
+                <div><dt>Location</dt><dd>{[form.area, form.city].filter(Boolean).join(", ")}{form.latitude ? " · pinned on map" : ""}</dd></div>
+                <div><dt>Price</dt><dd className="mono">{formatINR(Number(form.price))}{form.purpose === "RENT" ? " / month" : ""}</dd></div>
+                <div><dt>Details</dt><dd>{[form.bhk && `${form.bhk} BHK`, form.sqft && `${form.sqft} sq ft`, form.furnishing].filter(Boolean).join(" · ")}</dd></div>
+                <div><dt>Photos</dt><dd>{images.length}</dd></div>
+                <div><dt>Amenities</dt><dd>{amenities.join(", ") || "None"}</dd></div>
+              </dl>
+            </section>
           )}
 
-          {/* Wizard Action Controls */}
-          <div style={{
-            display: "flex",
-            justify: "space-between",
-            alignItems: "center",
-            marginTop: "32px",
-            paddingTop: "20px",
-            borderTop: "1px solid var(--color-border)"
-          }}>
-            {currentStep > 1 ? (
-              <button type="button" className="btn btn-outline" onClick={prevStep}>
-                ← Back
-              </button>
-            ) : <div />}
-
-            {currentStep < 5 ? (
-              <button type="button" className="btn btn-solid" onClick={nextStep}>
-                Continue →
+          <div className="wizard-actions">
+            {step > 0 ? (
+              <button type="button" className="btn btn-outline" onClick={goBack}>
+                <ArrowLeft size={16} aria-hidden="true" /> Back
               </button>
             ) : (
-              <button
-                type="button"
-                className="btn btn-solid"
-                onClick={submit}
-                disabled={loading}
-              >
-                {loading ? "Auditing & Publishing..." : "🚀 Publish Property"}
+              <span />
+            )}
+            {step < STEPS.length - 1 ? (
+              <button type="button" className="btn btn-solid" onClick={goNext}>
+                Continue <ArrowRight size={16} aria-hidden="true" />
+              </button>
+            ) : (
+              <button type="button" className="btn btn-solid" onClick={submit} disabled={submitting}>
+                {submitting ? "Publishing…" : "Publish listing"}
               </button>
             )}
           </div>
-        </div>
+        </form>
 
-        {/* Right Side: Live AI Score Preview Card */}
-        <div className="live-ai-preview-card">
-          <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-primary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "8px" }}>
-            Live AI Audit Preview
+        <aside className="live-ai-preview-card" aria-label="Listing completeness">
+          <p className="eyebrow">Listing quality</p>
+          <div className="completeness">
+            <span className="mono">{completeness}%</span>
+            <span className="muted">complete</span>
           </div>
-          <div style={{ fontSize: "16px", fontWeight: 650, fontFamily: "var(--font-serif)", marginBottom: "16px" }}>
-            Estimated AuraScore
+          <div className="progress-track" aria-hidden="true">
+            <div className="progress-fill" style={{ width: `${completeness}%` }} />
           </div>
-
-          <div className="score-ring" style={{ margin: "0 auto 16px" }}>
-            <div className="score-ring-inner">
-              <div className="num">{liveScore}</div>
-              <div className="lbl">Aura Score</div>
-            </div>
-          </div>
-
-          <div style={{ fontSize: "12.5px", color: "var(--color-text-muted)", textAlign: "center", marginBottom: "20px" }}>
-            {liveScore >= 85 ? (
-              <span style={{ color: "var(--color-success)", fontWeight: 600 }}>🟢 Excellent listing signals! High tenant interest expected.</span>
-            ) : (
-              <span>Add 3+ photos and detailed description to reach 85+ score.</span>
-            )}
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "12px", borderTop: "1px solid var(--color-border)", paddingTop: "14px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>Photos Uploaded ({images.length}/5)</span>
-              <span className="mono" style={{ color: images.length >= 3 ? "var(--color-success)" : "var(--color-text-caption)" }}>
-                {images.length >= 3 ? "+9 pts" : "+0 pts"}
-              </span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>Location Specified</span>
-              <span className="mono" style={{ color: form.area ? "var(--color-success)" : "var(--color-text-caption)" }}>
-                {form.area ? "+10 pts" : "+0 pts"}
-              </span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>Key Amenities ({selectedAmenities.length})</span>
-              <span className="mono" style={{ color: selectedAmenities.length > 0 ? "var(--color-success)" : "var(--color-text-caption)" }}>
-                {selectedAmenities.length > 0 ? "+6 pts" : "+0 pts"}
-              </span>
-            </div>
-          </div>
-        </div>
+          <ul className="checklist">
+            {checklist.map((c) => (
+              <li key={c.label} className={c.done ? "done" : ""}>
+                {c.done ? <Check size={15} aria-hidden="true" /> : <Circle size={15} aria-hidden="true" />}
+                {c.label}
+              </li>
+            ))}
+          </ul>
+          <p className="field-hint">After publishing, AuraSpot’s AI scores price fairness and fraud risk automatically.</p>
+        </aside>
       </div>
     </div>
   );
